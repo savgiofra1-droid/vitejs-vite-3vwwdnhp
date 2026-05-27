@@ -16,6 +16,7 @@ export default function Home({ messages, userName }: any) {
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
+    // Notifica quando arriva un nuovo messaggio
     if (messages.length > 0) {
       setNotification(`${messages[0].sender} ti pensa!`);
       const timerNot = setTimeout(() => setNotification(null), 5000);
@@ -24,7 +25,6 @@ export default function Home({ messages, userName }: any) {
     return () => clearInterval(timer);
   }, [messages]);
 
-  // Funzione di compressione per le foto del "Cuore"
   const compressImage = (dataUrl: string) => {
     return new Promise<string>((resolve) => {
       const img = new Image();
@@ -46,11 +46,7 @@ export default function Home({ messages, userName }: any) {
   };
 
   const sendAction = async (imgData: string | null = null) => {
-    await addDoc(collection(db, "messages"), { 
-      sender: userName, 
-      img: imgData, 
-      timestamp: serverTimestamp() 
-    });
+    await addDoc(collection(db, "messages"), { sender: userName, img: imgData, timestamp: serverTimestamp() });
     setTempImg(null); setShowOptions(false);
   };
 
@@ -61,6 +57,14 @@ export default function Home({ messages, userName }: any) {
 
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto pb-24 text-white">
+      <AnimatePresence>
+        {notification && (
+          <motion.div initial={{ y: -50 }} animate={{ y: 0 }} exit={{ y: -50 }} className="bg-red-500 p-3 rounded-2xl mb-4 flex items-center gap-2 shadow-lg z-50">
+            <Bell size={16} /> <p className="text-sm font-bold">{notification}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="bg-black/40 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center mb-6">
         <h1 className="text-4xl font-bold">{time.toLocaleTimeString()}</h1>
         <p className="text-red-400 text-sm font-bold mt-1">{giorniInsieme} giorni insieme</p>
@@ -87,14 +91,10 @@ export default function Home({ messages, userName }: any) {
       </div>
 
       <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={async (e) => {
-        const file = e.target.files?.[0];
-        if (file) {
+        if (e.target.files?.[0]) {
           const reader = new FileReader();
-          reader.onload = async (ev) => {
-            const compressed = await compressImage(ev.target?.result as string);
-            setTempImg(compressed);
-          };
-          reader.readAsDataURL(file);
+          reader.onload = async (ev) => { const compressed = await compressImage(ev.target?.result as string); setTempImg(compressed); };
+          reader.readAsDataURL(e.target.files[0]);
         }
       }} />
 

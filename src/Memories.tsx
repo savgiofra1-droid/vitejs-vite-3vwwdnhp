@@ -14,9 +14,7 @@ export default function Memories() {
 
   useEffect(() => {
     const q = query(collection(db, "ricordi"), orderBy("timestamp", "desc"));
-    return onSnapshot(q, (snapshot) => {
-      setRicordi(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    return onSnapshot(q, (snapshot) => setRicordi(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
   }, []);
 
   const compressImage = (dataUrl: string) => {
@@ -26,14 +24,11 @@ export default function Memories() {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const maxSize = 600;
-        let width = img.width;
-        let height = img.height;
+        let width = img.width, height = img.height;
         if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
         else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL('image/jpeg', 0.6));
       };
     });
@@ -42,15 +37,8 @@ export default function Memories() {
   const handleAdd = async () => {
     if (!formData.titolo || !tempImage) return alert("Inserisci titolo e foto!");
     setLoading(true);
-    try {
-      await addDoc(collection(db, "ricordi"), { ...formData, img: tempImage, timestamp: serverTimestamp() });
-      setIsAdding(false); setTempImage(null); setFormData({ titolo: '', luogo: '' });
-    } catch (e) { alert("Errore, riprova!"); }
-    setLoading(false);
-  };
-
-  const deleteRicordo = async (id: string) => {
-    if (confirm("Eliminare?")) await deleteDoc(doc(db, "ricordi", id));
+    await addDoc(collection(db, "ricordi"), { ...formData, img: tempImage, timestamp: serverTimestamp() });
+    setIsAdding(false); setTempImage(null); setFormData({ titolo: '', luogo: '' }); setLoading(false);
   };
 
   return (
@@ -63,7 +51,7 @@ export default function Memories() {
         {ricordi.map((r) => (
           <div key={r.id} className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-white/10">
             <img src={r.img} className="w-full h-full object-cover" />
-            <button onClick={() => deleteRicordo(r.id)} className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full"><Trash2 size={14} color="red" /></button>
+            <button onClick={() => deleteDoc(doc(db, "ricordi", r.id))} className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full"><Trash2 size={14} color="red" /></button>
             <div className="absolute bottom-0 p-3 w-full bg-gradient-to-t from-black"><p className="font-bold text-sm">{r.titolo}</p></div>
           </div>
         ))}
@@ -76,16 +64,14 @@ export default function Memories() {
               {tempImage ? <img src={tempImage} className="w-full h-full object-cover" /> : <Camera />}
             </div>
             <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (file) {
+              if (e.target.files?.[0]) {
                 const reader = new FileReader();
-                reader.onload = async (ev) => { const compressed = await compressImage(ev.target?.result as string); setTempImage(compressed); };
-                reader.readAsDataURL(file);
+                reader.onload = async (ev) => setTempImage(await compressImage(ev.target?.result as string));
+                reader.readAsDataURL(e.target.files[0]);
               }
             }} />
             <input placeholder="Titolo" className="w-full bg-white/5 p-4 rounded-2xl" onChange={e => setFormData({...formData, titolo: e.target.value})} />
-            <input placeholder="Luogo" className="w-full bg-white/5 p-4 rounded-2xl" onChange={e => setFormData({...formData, luogo: e.target.value})} />
-            <button onClick={handleAdd} disabled={loading} className="w-full py-5 bg-red-500 rounded-2xl font-bold">Pubblica</button>
+            <button onClick={handleAdd} className="w-full py-5 bg-red-500 rounded-2xl font-bold">Pubblica</button>
           </motion.div>
         )}
       </AnimatePresence>

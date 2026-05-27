@@ -8,7 +8,6 @@ export default function Gallery({ messages }: any) {
   const deleteMessage = async (id: string) => {
     if (confirm("Eliminare questa foto?")) await deleteDoc(doc(db, "messages", id));
   };
-
   return (
     <div className="p-4 grid grid-cols-2 gap-4 pb-24">
       {messages.filter((m: any) => m.img && m.img.length > 10).map((m: any) => (
