@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './Home';
 import Gallery from './Gallery';
 import Memories from './Memories';
@@ -15,20 +14,17 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    // Richiesta permessi notifiche all'avvio
     if ("Notification" in window && Notification.permission !== "granted") {
       Notification.requestPermission();
     }
-
     const q = query(collection(db, "messages"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(msgs);
+      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
     return () => unsubscribe();
   }, []);
 
-  const partnerName = userName?.toLowerCase().trim() === 'sofia' ? 'Tizzi' : 'Sofia';
+  const partnerName = userName === 'Tizzi' ? 'Sofia' : 'Tizzi';
 
   return (
     <Router>
@@ -36,35 +32,19 @@ export default function App() {
         <div className="absolute inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: "url('/nostra-foto.jpg')" }} />
         <div className="absolute inset-0 z-0 bg-black/60" />
         <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
-          <AnimatePresence mode="wait">
+          {!isOnboarded ? (
+            <Welcome setUserName={setUserName} setIsOnboarded={setIsOnboarded} />
+          ) : (
             <Routes>
-              {!isOnboarded ? (
-                <Route path="*" element={<Welcome setUserName={setUserName} setIsOnboarded={setIsOnboarded} />} />
-              ) : (
-                <Route path="/*" element={<AnimatedAppRoutes messages={messages} partnerName={partnerName} userName={userName} />} />
-              )}
+              <Route path="/" element={<Home messages={messages} partnerName={partnerName} userName={userName} />} />
+              <Route path="/gallery" element={<Gallery messages={messages} userName={userName} partnerName={partnerName} />} />
+              <Route path="/memories" element={<Memories />} />
+              <Route path="*" element={<Navigate to="/" />} />
             </Routes>
-          </AnimatePresence>
+          )}
         </div>
         {isOnboarded && <BottomNav />}
       </div>
     </Router>
   );
-}
-
-function AnimatedAppRoutes({ messages, partnerName, userName }: any) {
-  const location = useLocation();
-  return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<PageWrapper><Home messages={messages} partnerName={partnerName} userName={userName} /></PageWrapper>} />
-        <Route path="/gallery" element={<PageWrapper><Gallery messages={messages} userName={userName} partnerName={partnerName} /></PageWrapper>} />
-        <Route path="/memories" element={<PageWrapper><Memories /></PageWrapper>} />
-      </Routes>
-    </AnimatePresence>
-  );
-}
-
-function PageWrapper({ children }: any) {
-  return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">{children}</motion.div>;
 }

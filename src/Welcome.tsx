@@ -1,51 +1,29 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Heart } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React from 'react';
 
 export default function Welcome({ setUserName, setIsOnboarded }: any) {
-  const [name, setName] = useState('');
-  const navigate = useNavigate();
-
-  const handleStart = () => {
-    if (name.trim()) {
-      localStorage.setItem('userName', name);
-      setUserName(name);
-      setIsOnboarded(true);
-      navigate('/');
-    }
+  const selectProfile = (name: string) => {
+    localStorage.setItem('userName', name);
+    setUserName(name);
+    setIsOnboarded(true);
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="flex-1 flex flex-col items-center justify-center p-6 bg-zinc-950 text-white safe-pt"
-    >
-      <Heart
-        size={80}
-        fill="#ef4444"
-        color="#ef4444"
-        className="animate-pulse mb-8"
-      />
-      <h1 className="text-4xl font-bold mb-4 drop-shadow-md">Benvenuti</h1>
-      <p className="text-lg text-white/70 mb-10 text-center">
-        Inserisci il tuo nome per iniziare l'app per te e TIZZI.
-      </p>
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Il tuo nome"
-        className="w-full max-w-sm p-4 text-center rounded-full bg-white/10 text-white text-xl placeholder-white/30 border-2 border-white/10 focus:border-red-500 focus:outline-none focus:ring-0 mb-8 transition-colors"
-      />
-      <button
-        onClick={handleStart}
-        className="w-full max-w-sm flex items-center justify-center gap-3 p-4 rounded-full bg-red-600 text-white text-xl font-semibold active:bg-red-700 transition-colors"
-      >
-        <span>Inizia</span>
-      </button>
-    </motion.div>
+    <div className="h-screen flex flex-col items-center justify-center p-6 bg-black">
+      <h1 className="text-3xl font-bold mb-12">Chi sei?</h1>
+      <div className="flex flex-col gap-6 w-full max-w-sm">
+        <button 
+          onClick={() => selectProfile('Tizzi')}
+          className="p-8 bg-blue-600 rounded-3xl text-2xl font-bold shadow-lg shadow-blue-500/20"
+        >
+          Sono Tizzi 👦
+        </button>
+        <button 
+          onClick={() => selectProfile('Sofia')}
+          className="p-8 bg-pink-500 rounded-3xl text-2xl font-bold shadow-lg shadow-pink-500/20"
+        >
+          Sono Sofia 👧
+        </button>
+      </div>
+    </div>
   );
 }
