@@ -11,7 +11,9 @@ export default function Home({ messages, userName }: any) {
   const [showOptions, setShowOptions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const giorniInsieme = Math.floor((new Date().getTime() - new Date('2025-03-16').getTime()) / (1000 * 60 * 60 * 24));
+  // Data aggiornata al 16 marzo 2026
+  const dataInizio = new Date('2026-03-16');
+  const giorniInsieme = Math.floor((new Date().getTime() - dataInizio.getTime()) / (1000 * 60 * 60 * 24));
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -23,30 +25,9 @@ export default function Home({ messages, userName }: any) {
     return () => clearInterval(timer);
   }, [messages]);
 
-  // Funzione con Geolocalizzazione per i ricordi
   const sendAction = async (imgData: string | null = null) => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          await addDoc(collection(db, "messages"), { 
-            sender: userName, 
-            img: imgData, 
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            timestamp: serverTimestamp() 
-          });
-          setTempImg(null); setShowOptions(false);
-        },
-        async () => {
-          // Se rifiuta la posizione, invia senza coordinate
-          await addDoc(collection(db, "messages"), { sender: userName, img: imgData, timestamp: serverTimestamp() });
-          setTempImg(null); setShowOptions(false);
-        }
-      );
-    } else {
-      await addDoc(collection(db, "messages"), { sender: userName, img: imgData, timestamp: serverTimestamp() });
-      setTempImg(null); setShowOptions(false);
-    }
+    await addDoc(collection(db, "messages"), { sender: userName, img: imgData, timestamp: serverTimestamp() });
+    setTempImg(null); setShowOptions(false);
   };
 
   const oggiStr = new Date().toLocaleDateString();
