@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Camera, X } from 'lucide-react';
+import { Bell, Camera, X, RefreshCw } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -11,16 +11,14 @@ export default function Home({ messages, userName }: any) {
   const [showOptions, setShowOptions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const dataInizio = new Date('2026-03-16');
-  const giorniInsieme = Math.floor((new Date().getTime() - dataInizio.getTime()) / (1000 * 60 * 60 * 24));
+  const giorniInsieme = Math.floor((new Date().getTime() - new Date('2026-03-16').getTime()) / (1000 * 60 * 60 * 24));
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
-    // Notifica quando arriva un nuovo messaggio
     if (messages.length > 0) {
       setNotification(`${messages[0].sender} ti pensa!`);
-      const timerNot = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(timerNot);
+      const t = setTimeout(() => setNotification(null), 5000);
+      return () => clearTimeout(t);
     }
     return () => clearInterval(timer);
   }, [messages]);
@@ -32,14 +30,11 @@ export default function Home({ messages, userName }: any) {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const maxSize = 600;
-        let width = img.width;
-        let height = img.height;
+        let width = img.width, height = img.height;
         if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
         else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL('image/jpeg', 0.6));
       };
     });
@@ -52,11 +47,13 @@ export default function Home({ messages, userName }: any) {
 
   const oggiStr = new Date().toLocaleDateString();
   const messaggiOggi = messages.filter((m: any) => m.timestamp?.toDate().toLocaleDateString() === oggiStr).length;
-  const cuoriTizzi = messages.filter((m: any) => m.sender === 'Tizzi').length;
-  const cuoriSofia = messages.filter((m: any) => m.sender === 'Sofia').length;
 
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto pb-24 text-white">
+      <button onClick={() => window.location.reload()} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full z-50">
+        <RefreshCw size={16} />
+      </button>
+
       <AnimatePresence>
         {notification && (
           <motion.div initial={{ y: -50 }} animate={{ y: 0 }} exit={{ y: -50 }} className="bg-red-500 p-3 rounded-2xl mb-4 flex items-center gap-2 shadow-lg z-50">
@@ -71,20 +68,17 @@ export default function Home({ messages, userName }: any) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-white/10 p-3 rounded-2xl text-center"><p className="text-[10px] uppercase opacity-60">Oggi</p><p className="text-xl font-bold">{messaggiOggi}</p></div>
-        <div className="bg-white/10 p-3 rounded-2xl text-center"><p className="text-[10px] uppercase opacity-60">Totali</p><p className="text-xl font-bold">{messages.length}</p></div>
-        <div className="bg-blue-600/20 p-3 rounded-2xl text-center border border-blue-500/20"><p className="text-[10px] uppercase opacity-70">Tizzi</p><p className="text-xl font-bold">{cuoriTizzi}</p></div>
-        <div className="bg-pink-600/20 p-3 rounded-2xl text-center border border-pink-500/20"><p className="text-[10px] uppercase opacity-70">Sofia</p><p className="text-xl font-bold">{cuoriSofia}</p></div>
+        <div className="bg-white/10 p-3 rounded-2xl text-center"><p className="text-[10px] uppercase">Oggi</p><p className="text-xl font-bold">{messaggiOggi}</p></div>
+        <div className="bg-white/10 p-3 rounded-2xl text-center"><p className="text-[10px] uppercase">Totali</p><p className="text-xl font-bold">{messages.length}</p></div>
       </div>
 
       <div className="flex flex-col items-center mb-8 gap-2 relative">
-        <motion.button onClick={() => setShowOptions(!showOptions)} className="w-32 h-32 bg-red-600 rounded-full flex items-center justify-center shadow-lg">❤️</motion.button>
-        <p className="text-xs font-bold opacity-70 uppercase">Premi il cuore</p>
+        <motion.button onClick={() => setShowOptions(!showOptions)} className="w-32 h-32 bg-red-600 rounded-full shadow-lg text-5xl">❤️</motion.button>
         <AnimatePresence>
           {showOptions && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute -top-16 bg-white/20 backdrop-blur-lg p-3 rounded-2xl flex gap-4 z-50">
-              <button onClick={() => sendAction(null)}>Solo Cuore</button>
-              <button onClick={() => fileInputRef.current?.click()}><Camera size={16} /> Con Foto</button>
+              <button onClick={() => sendAction(null)} className="text-sm font-bold">Solo Cuore</button>
+              <button onClick={() => fileInputRef.current?.click()} className="text-sm font-bold"><Camera size={16} /></button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -93,19 +87,20 @@ export default function Home({ messages, userName }: any) {
       <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={async (e) => {
         if (e.target.files?.[0]) {
           const reader = new FileReader();
-          reader.onload = async (ev) => { const compressed = await compressImage(ev.target?.result as string); setTempImg(compressed); };
+          reader.onload = async (ev) => setTempImg(await compressImage(ev.target?.result as string));
           reader.readAsDataURL(e.target.files[0]);
         }
       }} />
 
-      <AnimatePresence>
-        {tempImg && (
-          <motion.div className="fixed inset-0 z-[100] bg-black p-6 flex flex-col justify-center">
-            <img src={tempImg} className="w-full rounded-3xl mb-4" />
-            <button onClick={() => sendAction(tempImg)} className="bg-red-600 py-4 rounded-2xl font-bold">Invia Foto</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold opacity-50 uppercase px-2">Attività live</h3>
+        {messages.slice(0, 5).map((m: any) => (
+          <div key={m.id} className="bg-black/40 p-3 rounded-xl border border-white/10 text-sm flex justify-between">
+            <span>{m.sender} ha inviato un pensiero</span>
+            <span className="opacity-50">{m.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Camera, Trash2 } from 'lucide-react';
+import { Plus, X, Camera, Trash2, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
@@ -47,15 +47,25 @@ export default function Memories() {
         <h2 className="text-2xl font-bold uppercase italic">I Nostri Ricordi</h2>
         <button onClick={() => setIsAdding(true)} className="bg-red-500 p-3 rounded-full"><Plus /></button>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+
+      <div className="grid grid-cols-2 gap-4">
         {ricordi.map((r) => (
-          <div key={r.id} className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-white/10">
-            <img src={r.img} className="w-full h-full object-cover" />
-            <button onClick={() => deleteDoc(doc(db, "ricordi", r.id))} className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full"><Trash2 size={14} color="red" /></button>
-            <div className="absolute bottom-0 p-3 w-full bg-gradient-to-t from-black"><p className="font-bold text-sm">{r.titolo}</p></div>
+          <div key={r.id} className="relative flex flex-col gap-2">
+            <div className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-white/10">
+              <img src={r.img} className="w-full h-full object-cover" />
+              <button onClick={() => deleteDoc(doc(db, "ricordi", r.id))} className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full"><Trash2 size={14} color="red" /></button>
+            </div>
+            <div className="px-1">
+              <p className="font-bold text-sm truncate">{r.titolo}</p>
+              <div className="flex items-center gap-1 opacity-50 text-[10px]">
+                <Calendar size={10} />
+                <span>{r.timestamp?.toDate().toLocaleDateString()}</span>
+              </div>
+            </div>
           </div>
         ))}
       </div>
+
       <AnimatePresence>
         {isAdding && (
           <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="fixed inset-0 z-50 bg-[#111] p-6 flex flex-col gap-4 overflow-y-auto">
@@ -71,7 +81,7 @@ export default function Memories() {
               }
             }} />
             <input placeholder="Titolo" className="w-full bg-white/5 p-4 rounded-2xl" onChange={e => setFormData({...formData, titolo: e.target.value})} />
-            <button onClick={handleAdd} className="w-full py-5 bg-red-500 rounded-2xl font-bold">Pubblica</button>
+            <button onClick={handleAdd} disabled={loading} className="w-full py-5 bg-red-500 rounded-2xl font-bold">{loading ? "Pubblicando..." : "Pubblica"}</button>
           </motion.div>
         )}
       </AnimatePresence>
