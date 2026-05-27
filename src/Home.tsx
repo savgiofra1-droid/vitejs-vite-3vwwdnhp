@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell } from 'lucide-react';
+import { Bell, Camera, X } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function Home({ messages, partnerName, userName }: any) {
   const [time, setTime] = useState(new Date());
+  const [tempImg, setTempImg] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  const [showOptions, setShowOptions] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dataInizio = new Date('2025-03-16');
   const giorniInsieme = Math.floor((new Date().getTime() - dataInizio.getTime()) / (1000 * 60 * 60 * 24));
@@ -14,22 +17,22 @@ export default function Home({ messages, partnerName, userName }: any) {
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     if (messages.length > 0) {
-      setNotification(`${messages[0].sender} ha inviato un pensiero!`);
-      const timerNotifica = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(timerNotifica);
+      setNotification(`${messages[0].sender} ti pensa!`);
+      const timerNot = setTimeout(() => setNotification(null), 5000);
+      return () => clearTimeout(timerNot);
     }
     return () => clearInterval(timer);
   }, [messages]);
 
-  const sendHeart = async () => {
+  const sendAction = async (img: string | null = null) => {
     await addDoc(collection(db, "messages"), { 
       sender: userName, 
+      img: img, 
       timestamp: serverTimestamp() 
     });
+    setTempImg(null);
+    setShowOptions(false);
   };
-
-  const oggiStr = new Date().toLocaleDateString();
-  const messaggiOggi = messages.filter((m: any) => m.timestamp?.toDate().toLocaleDateString() === oggiStr).length;
 
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto pb-24 text-white">
@@ -46,35 +49,50 @@ export default function Home({ messages, partnerName, userName }: any) {
         <p className="text-red-400 text-sm font-bold mt-1">{giorniInsieme} giorni insieme</p>
       </div>
 
-      <div className="flex gap-3 mb-6">
-        <div className="flex-1 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-center">
-          <p className="text-[10px] uppercase opacity-60">Oggi</p>
-          <p className="text-xl font-bold">{messaggiOggi}</p>
-        </div>
-        <div className="flex-1 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-center">
-          <p className="text-[10px] uppercase opacity-60">Totali</p>
-          <p className="text-xl font-bold">{messages.length}</p>
-        </div>
-      </div>
-
-      <div className="flex flex-col items-center mb-8">
-        <h2 className="text-xl font-bold mb-4">{userName === 'Tizzi' ? 'Ciao Tizzi, pensi a Sofia?' : 'Sofia, pensi a Tizzi?'}</h2>
+      <div className="flex flex-col items-center mb-8 gap-2 relative">
         <motion.button 
-          onClick={sendHeart}
-          whileTap={{ scale: 0.9 }} 
-          className="w-32 h-32 bg-red-600 rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(220,38,38,0.5)]"
+          onClick={() => setShowOptions(!showOptions)} 
+          className="w-32 h-32 bg-red-600 rounded-full flex items-center justify-center shadow-lg"
         >
           <span className="text-5xl">❤️</span>
         </motion.button>
+        
+        <p className="text-xs font-bold opacity-70 tracking-widest uppercase mt-2">
+          Premi il cuore per dire "Mi manchi"
+        </p>
+
+        <AnimatePresence>
+          {showOptions && (
+            <motion.div initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} className="absolute -top-16 bg-white/20 backdrop-blur-lg p-3 rounded-2xl flex gap-4 shadow-xl z-40">
+              <button onClick={() => sendAction()} className="text-sm font-bold px-2">Solo Cuore</button>
+              <button onClick={() => fileInputRef.current?.click()} className="text-sm font-bold flex items-center gap-1 px-2">
+                <Camera size={16} /> Con Foto
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      <div className="space-y-3">
-        {messages.slice(0, 5).map((m: any) => (
-          <div key={m.id} className="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/10 text-sm flex justify-between">
-            <p className="font-bold">{m.sender} ti ha pensato</p>
-          </div>
-        ))}
-      </div>
+      <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => setTempImg(reader.result as string);
+          reader.readAsDataURL(file);
+        }
+      }} />
+
+      <AnimatePresence>
+        {tempImg && (
+          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="fixed inset-0 z-50 bg-black p-6 flex flex-col justify-center">
+            <img src={tempImg} className="w-full rounded-3xl mb-4" />
+            <div className="flex gap-4">
+              <button onClick={() => setTempImg(null)} className="flex-1 bg-white/10 py-4 rounded-2xl"><X className="mx-auto"/></button>
+              <button onClick={() => sendAction(tempImg)} className="flex-[2] bg-red-600 py-4 rounded-2xl font-bold">Invia con Cuore</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

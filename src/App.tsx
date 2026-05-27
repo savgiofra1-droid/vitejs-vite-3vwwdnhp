@@ -29,21 +29,15 @@ export default function App() {
   return (
     <Router>
       <div className="relative h-screen w-full bg-black text-white flex flex-col">
-        {/* Sfondo con foto */}
-        <div 
-          className="absolute inset-0 z-0 bg-cover bg-center" 
-          style={{ backgroundImage: "url('/nostra-foto.jpg')" }} 
-        />
-        {/* Velo scuro per leggibilità */}
+        <div className="absolute inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: "url('/nostra-foto.jpg')" }} />
         <div className="absolute inset-0 z-0 bg-black/60" />
-        
         <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
           {!isOnboarded ? (
             <Welcome setUserName={setUserName} setIsOnboarded={setIsOnboarded} />
           ) : (
             <Routes>
               <Route path="/" element={<Home messages={messages} partnerName={partnerName} userName={userName} />} />
-              <Route path="/gallery" element={<Gallery messages={messages} userName={userName} partnerName={partnerName} />} />
+              <Route path="/gallery" element={<Gallery messages={messages} />} />
               <Route path="/memories" element={<Memories />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
