@@ -14,17 +14,12 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission();
-    }
     const q = query(collection(db, "messages"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
     return () => unsubscribe();
   }, []);
-
-  const partnerName = userName === 'Tizzi' ? 'Sofia' : 'Tizzi';
 
   return (
     <Router>
@@ -36,7 +31,7 @@ export default function App() {
             <Welcome setUserName={setUserName} setIsOnboarded={setIsOnboarded} />
           ) : (
             <Routes>
-              <Route path="/" element={<Home messages={messages} partnerName={partnerName} userName={userName} />} />
+              <Route path="/" element={<Home messages={messages} userName={userName} />} />
               <Route path="/gallery" element={<Gallery messages={messages} />} />
               <Route path="/memories" element={<Memories />} />
               <Route path="*" element={<Navigate to="/" />} />
