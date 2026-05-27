@@ -3,13 +3,13 @@ import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'r
 import { AnimatePresence, motion } from 'framer-motion';
 import Home from './Home';
 import Gallery from './Gallery';
+import Memories from './Memories'; // NUOVO
 import BottomNav from './BottomNav';
 import Welcome from './Welcome';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function App() {
-  // 1. ORA LEGGE LA MEMORIA ALL'ISTANTE (così non ti chiede più il nome ogni volta)
   const [userName, setUserName] = useState<string | null>(localStorage.getItem('userName'));
   const [isOnboarded, setIsOnboarded] = useState(!!localStorage.getItem('userName'));
   const [messages, setMessages] = useState<any[]>([]);
@@ -20,11 +20,9 @@ export default function App() {
       const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setMessages(msgs);
     });
-
     return () => unsubscribe();
   }, []);
 
-  // 2. IL CERVELLO DELL'APP: Se chi usa l'app si chiama Sofia, la notifica va a Tizzi. Altrimenti va a Sofia!
   const partnerName = userName?.toLowerCase().trim() === 'sofia' ? 'Tizzi' : 'Sofia';
 
   return (
@@ -56,14 +54,12 @@ export default function App() {
 
 function AnimatedAppRoutes({ messages, partnerName, userName }: any) {
   const location = useLocation();
-  
-  if (!userName) return null;
-  
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<PageWrapper><Home messages={messages} partnerName={partnerName} userName={userName} /></PageWrapper>} />
         <Route path="/gallery" element={<PageWrapper><Gallery messages={messages} userName={userName} partnerName={partnerName} /></PageWrapper>} />
+        <Route path="/memories" element={<PageWrapper><Memories /></PageWrapper>} /> {/* NUOVO */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>
