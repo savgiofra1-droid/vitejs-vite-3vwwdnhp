@@ -34,6 +34,9 @@ export default function Home({ messages, partnerName, userName }: any) {
     setShowOptions(false);
   };
 
+  const oggiStr = new Date().toLocaleDateString();
+  const messaggiOggi = messages.filter((m: any) => m.timestamp?.toDate().toLocaleDateString() === oggiStr).length;
+
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto pb-24 text-white">
       <AnimatePresence>
@@ -49,17 +52,22 @@ export default function Home({ messages, partnerName, userName }: any) {
         <p className="text-red-400 text-sm font-bold mt-1">{giorniInsieme} giorni insieme</p>
       </div>
 
+      <div className="flex gap-3 mb-6">
+        <div className="flex-1 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-center">
+          <p className="text-[10px] uppercase opacity-60">Oggi</p>
+          <p className="text-xl font-bold">{messaggiOggi}</p>
+        </div>
+        <div className="flex-1 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-center">
+          <p className="text-[10px] uppercase opacity-60">Totali</p>
+          <p className="text-xl font-bold">{messages.length}</p>
+        </div>
+      </div>
+
       <div className="flex flex-col items-center mb-8 gap-2 relative">
-        <motion.button 
-          onClick={() => setShowOptions(!showOptions)} 
-          className="w-32 h-32 bg-red-600 rounded-full flex items-center justify-center shadow-lg"
-        >
+        <motion.button onClick={() => setShowOptions(!showOptions)} className="w-32 h-32 bg-red-600 rounded-full flex items-center justify-center shadow-lg">
           <span className="text-5xl">❤️</span>
         </motion.button>
-        
-        <p className="text-xs font-bold opacity-70 tracking-widest uppercase mt-2">
-          Premi il cuore per dire "Mi manchi"
-        </p>
+        <p className="text-xs font-bold opacity-70 tracking-widest uppercase mt-2">Premi il cuore per dire "Mi manchi"</p>
 
         <AnimatePresence>
           {showOptions && (
