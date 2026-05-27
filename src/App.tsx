@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'r
 import { AnimatePresence, motion } from 'framer-motion';
 import Home from './Home';
 import Gallery from './Gallery';
-import Memories from './Memories'; // NUOVO
+import Memories from './Memories';
 import BottomNav from './BottomNav';
 import Welcome from './Welcome';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
@@ -28,8 +28,14 @@ export default function App() {
   return (
     <Router>
       <div className="relative h-screen w-full bg-black text-white flex flex-col">
-        <div className="absolute inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: "url('/sfondo.jpg')" }} />
+        {/* SFONDO DINAMICO CON LA VOSTRA FOTO */}
+        <div 
+          className="absolute inset-0 z-0 bg-cover bg-center" 
+          style={{ backgroundImage: "url('/nostra-foto.jpg')" }} 
+        />
+        {/* OVERLAY NERO PER LEGGIBILITA' TESTI */}
         <div className="absolute inset-0 z-0 bg-black/60" />
+        
         <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             <Routes>
@@ -59,7 +65,7 @@ function AnimatedAppRoutes({ messages, partnerName, userName }: any) {
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<PageWrapper><Home messages={messages} partnerName={partnerName} userName={userName} /></PageWrapper>} />
         <Route path="/gallery" element={<PageWrapper><Gallery messages={messages} userName={userName} partnerName={partnerName} /></PageWrapper>} />
-        <Route path="/memories" element={<PageWrapper><Memories /></PageWrapper>} /> {/* NUOVO */}
+        <Route path="/memories" element={<PageWrapper><Memories /></PageWrapper>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>
@@ -68,7 +74,13 @@ function AnimatedAppRoutes({ messages, partnerName, userName }: any) {
 
 function PageWrapper({ children }: any) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }} className="flex-1 h-full overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0, y: -10 }} 
+      transition={{ duration: 0.3 }} 
+      className="flex-1 h-full overflow-hidden"
+    >
       {children}
     </motion.div>
   );
