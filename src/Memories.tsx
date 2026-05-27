@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Camera, Trash2, Calendar } from 'lucide-react';
+import { Plus, X, Camera, Trash2, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function Memories() {
   const [ricordi, setRicordi] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [tempImage, setTempImage] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ titolo: '', luogo: '' });
-  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ titolo: '', data: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -34,12 +34,24 @@ export default function Memories() {
     });
   };
 
-  const handleAdd = async () => {
-    if (!formData.titolo || !tempImage) return alert("Inserisci titolo e foto!");
-    setLoading(true);
-    await addDoc(collection(db, "ricordi"), { ...formData, img: tempImage, timestamp: serverTimestamp() });
-    setIsAdding(false); setTempImage(null); setFormData({ titolo: '', luogo: '' }); setLoading(false);
+  const handleSave = async () => {
+    if (!formData.titolo || !tempImage) return;
+    if (editingId) {
+      await updateDoc(doc(db, "ricordi", editingId), { ...formData, img: tempImage });
+    } else {
+      await addDoc(collection(db, "ricordi"), { ...formData, img: tempImage, timestamp: serverTimestamp() });
+    }
+    closeModal();
   };
+
+  const openEdit = (r: any) => {
+    setEditingId(r.id);
+    setFormData({ titolo: r.titolo, data: r.data });
+    setTempImage(r.img);
+    setIsAdding(true);
+  };
+
+  const closeModal = () => { setIsAdding(false); setEditingId(null); setTempImage(null); setFormData({ titolo: '', data: '' }); };
 
   return (
     <div className="h-full p-4 pb-24 overflow-y-auto bg-black/20">
@@ -47,29 +59,28 @@ export default function Memories() {
         <h2 className="text-2xl font-bold uppercase italic">I Nostri Ricordi</h2>
         <button onClick={() => setIsAdding(true)} className="bg-red-500 p-3 rounded-full"><Plus /></button>
       </div>
-
+      
       <div className="grid grid-cols-2 gap-4">
         {ricordi.map((r) => (
           <div key={r.id} className="relative flex flex-col gap-2">
             <div className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-white/10">
               <img src={r.img} className="w-full h-full object-cover" />
               <button onClick={() => deleteDoc(doc(db, "ricordi", r.id))} className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full"><Trash2 size={14} color="red" /></button>
+              <button onClick={() => openEdit(r)} className="absolute top-2 left-2 bg-black/50 p-1.5 rounded-full"><Edit2 size={14} color="white" /></button>
             </div>
+            {/* AGGIUNTA: Visualizzazione Titolo e Data */}
             <div className="px-1">
               <p className="font-bold text-sm truncate">{r.titolo}</p>
-              <div className="flex items-center gap-1 opacity-50 text-[10px]">
-                <Calendar size={10} />
-                <span>{r.timestamp?.toDate().toLocaleDateString()}</span>
-              </div>
+              <p className="text-[10px] opacity-60 font-medium">{r.data}</p>
             </div>
           </div>
         ))}
       </div>
-
+      
       <AnimatePresence>
         {isAdding && (
-          <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="fixed inset-0 z-50 bg-[#111] p-6 flex flex-col gap-4 overflow-y-auto">
-            <div className="flex justify-between"><h3 className="font-bold">Nuovo Ricordo</h3><button onClick={() => setIsAdding(false)}><X /></button></div>
+          <motion.div className="fixed inset-0 z-50 bg-[#111] p-6 flex flex-col gap-4 overflow-y-auto">
+            <div className="flex justify-between"><h3 className="font-bold">{editingId ? 'Modifica Ricordo' : 'Nuovo Ricordo'}</h3><button onClick={closeModal}><X /></button></div>
             <div onClick={() => fileInputRef.current?.click()} className="w-full aspect-video bg-white/5 rounded-3xl flex items-center justify-center border border-dashed">
               {tempImage ? <img src={tempImage} className="w-full h-full object-cover" /> : <Camera />}
             </div>
@@ -80,8 +91,9 @@ export default function Memories() {
                 reader.readAsDataURL(e.target.files[0]);
               }
             }} />
-            <input placeholder="Titolo" className="w-full bg-white/5 p-4 rounded-2xl" onChange={e => setFormData({...formData, titolo: e.target.value})} />
-            <button onClick={handleAdd} disabled={loading} className="w-full py-5 bg-red-500 rounded-2xl font-bold">{loading ? "Pubblicando..." : "Pubblica"}</button>
+            <input value={formData.titolo} placeholder="Titolo" className="w-full bg-white/5 p-4 rounded-2xl" onChange={e => setFormData({...formData, titolo: e.target.value})} />
+            <input value={formData.data} placeholder="Data (es. 16 Marzo 2026)" className="w-full bg-white/5 p-4 rounded-2xl" onChange={e => setFormData({...formData, data: e.target.value})} />
+            <button onClick={handleSave} className="w-full py-5 bg-red-500 rounded-2xl font-bold">Salva</button>
           </motion.div>
         )}
       </AnimatePresence>
