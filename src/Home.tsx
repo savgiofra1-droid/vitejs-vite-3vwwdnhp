@@ -11,7 +11,6 @@ export default function Home({ messages, userName }: any) {
   const [showOptions, setShowOptions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Data aggiornata al 16 marzo 2026
   const dataInizio = new Date('2026-03-16');
   const giorniInsieme = Math.floor((new Date().getTime() - dataInizio.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -25,8 +24,33 @@ export default function Home({ messages, userName }: any) {
     return () => clearInterval(timer);
   }, [messages]);
 
+  // Funzione di compressione per le foto del "Cuore"
+  const compressImage = (dataUrl: string) => {
+    return new Promise<string>((resolve) => {
+      const img = new Image();
+      img.src = dataUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxSize = 600;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
+        else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+    });
+  };
+
   const sendAction = async (imgData: string | null = null) => {
-    await addDoc(collection(db, "messages"), { sender: userName, img: imgData, timestamp: serverTimestamp() });
+    await addDoc(collection(db, "messages"), { 
+      sender: userName, 
+      img: imgData, 
+      timestamp: serverTimestamp() 
+    });
     setTempImg(null); setShowOptions(false);
   };
 
@@ -37,14 +61,6 @@ export default function Home({ messages, userName }: any) {
 
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto pb-24 text-white">
-      <AnimatePresence>
-        {notification && (
-          <motion.div initial={{ y: -50 }} animate={{ y: 0 }} exit={{ y: -50 }} className="bg-red-500 p-3 rounded-2xl mb-4 flex items-center gap-2 shadow-lg z-50">
-            <Bell size={16} /> <p className="text-sm font-bold">{notification}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <div className="bg-black/40 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center mb-6">
         <h1 className="text-4xl font-bold">{time.toLocaleTimeString()}</h1>
         <p className="text-red-400 text-sm font-bold mt-1">{giorniInsieme} giorni insieme</p>
@@ -70,23 +86,17 @@ export default function Home({ messages, userName }: any) {
         </AnimatePresence>
       </div>
 
-      <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={(e) => {
+      <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={async (e) => {
         const file = e.target.files?.[0];
         if (file) {
           const reader = new FileReader();
-          reader.onload = (ev) => setTempImg(ev.target?.result as string);
+          reader.onload = async (ev) => {
+            const compressed = await compressImage(ev.target?.result as string);
+            setTempImg(compressed);
+          };
           reader.readAsDataURL(file);
         }
       }} />
-
-      <div className="space-y-3">
-        {messages.slice(0, 5).map((m: any) => (
-          <div key={m.id} className="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/10 text-sm flex justify-between">
-            <p className="font-bold">{m.sender} ti pensa</p>
-            <span className="opacity-50">{m.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-          </div>
-        ))}
-      </div>
 
       <AnimatePresence>
         {tempImg && (
