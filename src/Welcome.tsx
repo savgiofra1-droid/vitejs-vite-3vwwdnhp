@@ -8,18 +8,18 @@ export default function Welcome({ setUserName, setIsOnboarded }: any) {
   };
 
   return (
-    <div className="h-screen flex flex-col items-center justify-center p-6 bg-black">
+    <div className="h-screen flex flex-col items-center justify-center p-6">
       <h1 className="text-3xl font-bold mb-12">Chi sei?</h1>
       <div className="flex flex-col gap-6 w-full max-w-sm">
         <button 
           onClick={() => selectProfile('Tizzi')}
-          className="p-8 bg-blue-600 rounded-3xl text-2xl font-bold shadow-lg shadow-blue-500/20"
+          className="p-8 bg-blue-600 rounded-3xl text-2xl font-bold shadow-lg"
         >
           Sono Tizzi 👦
         </button>
         <button 
           onClick={() => selectProfile('Sofia')}
-          className="p-8 bg-pink-500 rounded-3xl text-2xl font-bold shadow-lg shadow-pink-500/20"
+          className="p-8 bg-pink-500 rounded-3xl text-2xl font-bold shadow-lg"
         >
           Sono Sofia 👧
         </button>
@@ -27,3 +27,4 @@ export default function Welcome({ setUserName, setIsOnboarded }: any) {
     </div>
   );
 }
+
