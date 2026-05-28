@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw, Edit2, X } from 'lucide-react';
+import { RefreshCw, Edit2, X, ChevronRight } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -36,7 +36,7 @@ export default function Home({ messages, userName }: any) {
 
   const getCountdownString = () => {
     if (!countdown || !countdown.date) return "--d --o --m --s";
-    const target = new Date(countdown.date.replace(/-/g, '/')); // Fix per compatibilità cross-browser
+    const target = new Date(countdown.date.replace(/-/g, '/'));
     const adesso = new Date();
     const diff = target.getTime() - adesso.getTime();
 
@@ -140,19 +140,23 @@ export default function Home({ messages, userName }: any) {
 
       {/* Attività Live */}
       <div className="space-y-3">
-        <h3 className="text-xs font-bold opacity-50 uppercase px-2">Attività live (ultimi 10)</h3>
+        <h3 className="text-xs font-bold opacity-50 uppercase px-2 flex items-center gap-2">
+          Attività live (ultimi 10) 
+          <span className="normal-case text-[10px] opacity-70 italic text-red-300">(clicca per espandere)</span>
+        </h3>
         {messages.slice(0, 10).map((m: any) => {
           const d = m.timestamp?.toDate ? m.timestamp.toDate() : new Date();
           return (
             <div 
               key={m.id} 
               onClick={() => setSelectedLiveMessage(m)}
-              className="bg-black/40 p-3 rounded-xl text-xs flex justify-between items-center border border-white/5 active:bg-white/5 cursor-pointer transition-all"
+              className="bg-black/40 p-3 rounded-xl text-xs flex justify-between items-center border border-white/5 active:bg-white/5 cursor-pointer transition-all hover:bg-white/5"
             >
               <span className="flex-1 font-bold">{m.sender} <span className="font-normal opacity-80">{m.img && m.text ? "cuore, foto e testo" : m.img ? "cuore e foto" : m.text ? `testo: "${m.text.substring(0,10)}..."` : "un cuore"}</span></span>
-              <div className="flex gap-1 ml-2">
+              <div className="flex items-center gap-1 ml-2">
                 <span className="bg-white/10 px-1.5 py-0.5 rounded">{d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                <span className="bg-white/10 px-1.5 py-0.5 rounded">{d.toLocaleDateString()}</span>
+                <span className="bg-white/10 px-1.5 py-0.5 rounded hidden sm:inline-block">{d.toLocaleDateString()}</span>
+                <ChevronRight size={16} className="text-red-400 opacity-70 ml-1" />
               </div>
             </div>
           );

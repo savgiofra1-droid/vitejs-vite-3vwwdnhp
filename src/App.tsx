@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Home from './Home';
 import Gallery from './Gallery';
 import Memories from './Memories';
+import Chat from './Chat'; // Nuova importazione
 import BottomNav from './BottomNav';
 import Welcome from './Welcome';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
@@ -14,7 +15,6 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    // Rimosso il limit() così i contatori possono leggere tutto lo storico
     const q = query(collection(db, "messages"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -25,8 +25,10 @@ export default function App() {
   return (
     <Router>
       <div className="relative h-screen w-full bg-black text-white flex flex-col">
+        {/* Sfondo principale dell'app */}
         <div className="absolute inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: "url('/nostra-foto.jpg')" }} />
         <div className="absolute inset-0 z-0 bg-black/60" />
+        
         <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
           {!isOnboarded ? (
             <Welcome setUserName={setUserName} setIsOnboarded={setIsOnboarded} />
@@ -35,6 +37,7 @@ export default function App() {
               <Route path="/" element={<Home messages={messages} userName={userName} />} />
               <Route path="/gallery" element={<Gallery messages={messages} />} />
               <Route path="/memories" element={<Memories />} />
+              <Route path="/chat" element={<Chat userName={userName || 'Utente'} />} /> {/* Nuova Rotta */}
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           )}

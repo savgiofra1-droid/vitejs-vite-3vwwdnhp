@@ -1,26 +1,32 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Home, Image, BookHeart } from 'lucide-react'; // Usiamo BookHeart per i ricordi
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Home, Image, Heart, MessageCircle } from 'lucide-react'; // Importa MessageCircle
 
 export default function BottomNav() {
+  const navigate = useNavigate();
   const location = useLocation();
-  
-  return (
-    <div className="fixed bottom-0 w-full bg-black/80 backdrop-blur-lg border-t border-white/10 p-4 flex justify-around pb-6 z-50">
-      <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-red-500' : 'text-white'}`}>
-        <Home size={24} />
-        <span className="text-[10px] mt-1">Home</span>
-      </Link>
-      
-      <Link to="/gallery" className={`flex flex-col items-center ${location.pathname === '/gallery' ? 'text-red-500' : 'text-white'}`}>
-        <Image size={24} />
-        <span className="text-[10px] mt-1">Galleria</span>
-      </Link>
 
-      <Link to="/memories" className={`flex flex-col items-center ${location.pathname === '/memories' ? 'text-red-500' : 'text-white'}`}>
-        <BookHeart size={24} />
-        <span className="text-[10px] mt-1">Ricordi</span>
-      </Link>
+  const isActive = (path: string) => location.pathname === path;
+
+  return (
+    <div className="fixed bottom-0 left-0 w-full flex justify-around p-4 bg-black/80 backdrop-blur-md border-t border-white/10 z-[100]">
+      <button onClick={() => navigate('/')} className={`flex flex-col items-center text-xs font-bold ${isActive('/') ? 'text-red-500' : 'text-white/60'}`}>
+        <Home size={20} className="mb-1" />
+        Home
+      </button>
+      <button onClick={() => navigate('/memories')} className={`flex flex-col items-center text-xs font-bold ${isActive('/memories') ? 'text-red-500' : 'text-white/60'}`}>
+        <Heart size={20} className="mb-1" />
+        Ricordi
+      </button>
+      <button onClick={() => navigate('/gallery')} className={`flex flex-col items-center text-xs font-bold ${isActive('/gallery') ? 'text-red-500' : 'text-white/60'}`}>
+        <Image size={20} className="mb-1" />
+        Galleria
+      </button>
+      {/* Nuovo Bottone della Chat */}
+      <button onClick={() => navigate('/chat')} className={`flex flex-col items-center text-xs font-bold ${isActive('/chat') ? 'text-red-500' : 'text-white/60'}`}>
+        <MessageCircle size={20} className="mb-1" />
+        Chat
+      </button>
     </div>
   );
 }
