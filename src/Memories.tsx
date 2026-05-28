@@ -52,34 +52,61 @@ export default function Memories() {
     return () => unsubscribe();
   }, []);
 
-  // COMPRESSIONE SUPER-OTTIMIZZATA PER IPHONE (Evita crash di memoria RAM)
-  const compressImage = (url: string) => {
-    return new Promise<string>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxSize = 800; // Leggermente più grande per qualità migliore, ma sicurissimo con ObjectURL
-        let width = img.width, height = img.height;
-        if (width > height) { 
-          if (width > maxSize) { height *= maxSize / width; width = maxSize; } 
-        } else { 
-          if (height > maxSize) { width *= maxSize / height; height = maxSize; } 
+  // IL MOTORE ANTI-CRASH PER IPHONE (Svuota aggressivamente la RAM)
+  const compressImage = async (file: File): Promise<string> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        let width: number, height: number;
+        let imgObj: ImageBitmap | HTMLImageElement;
+        
+        // Usa il processore grafico se disponibile (iOS 15+)
+        if (window.createImageBitmap) {
+          imgObj = await createImageBitmap(file);
+          width = imgObj.width;
+          height = imgObj.height;
+        } else {
+          // Metodo classico di riserva
+          imgObj = new Image();
+          const objectUrl = URL.createObjectURL(file);
+          await new Promise<void>((res, rej) => {
+            imgObj.onload = () => { URL.revokeObjectURL(objectUrl); res(); };
+            imgObj.onerror = rej;
+            (imgObj as HTMLImageElement).src = objectUrl;
+          });
+          width = imgObj.width;
+          height = imgObj.height;
         }
-        canvas.width = width; canvas.height = height;
+
+        const canvas = document.createElement('canvas');
+        const maxSize = 800;
+        if (width > height) {
+          if (width > maxSize) { height = Math.round(height * (maxSize / width)); width = maxSize; }
+        } else {
+          if (height > maxSize) { width = Math.round(width * (maxSize / height)); height = maxSize; }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.6));
+          ctx.drawImage(imgObj, 0, 0, width, height);
+          const result = canvas.toDataURL('image/jpeg', 0.6); // Compressione al 60%
+          
+          // DISTRUZIONE IMMEDIATA PER LIBERARE RAM SU IPHONE
+          if ('close' in imgObj) (imgObj as ImageBitmap).close();
+          canvas.width = 0;
+          canvas.height = 0;
+          
+          resolve(result);
         } else {
-          reject(new Error("Canvas non supportato"));
+          reject(new Error("Errore Canvas"));
         }
-      };
-      img.onerror = (err) => reject(err);
-      img.src = url;
+      } catch (err) {
+        reject(err);
+      }
     });
   };
 
-  // LETTURA FOTO (NUOVO RICORDO)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
@@ -90,13 +117,12 @@ export default function Memories() {
       const remainingFiles = files.length - i;
       setEstimatedTime(remainingFiles * 2); 
       setUploadStatus(`Compressione foto ${i + 1} di ${files.length}...`);
-      await new Promise(r => setTimeout(r, 100)); // Respiro UI
+      
+      // Doppio respiro per permettere al telefono di aggiornare la grafica e non bloccarsi
+      await new Promise(r => setTimeout(r, 150)); 
 
       try {
-        // IL TRUCCO MAGICO: Evita FileReader e usa un link temporaneo alla memoria
-        const objectUrl = URL.createObjectURL(files[i]);
-        const compressed = await compressImage(objectUrl);
-        URL.revokeObjectURL(objectUrl); // SVUOTA SUBITO LA RAM DELL'IPHONE
+        const compressed = await compressImage(files[i]);
         compressedImages.push(compressed);
       } catch (err) {
         console.error("Errore caricamento foto", err);
@@ -107,9 +133,10 @@ export default function Memories() {
     setUploadStatus('');
     setEstimatedTime(null);
     setIsUploading(false);
+    
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // SALVATAGGIO CLOUD (NUOVO RICORDO)
   const handleAddMemory = async () => {
     if (!newTitle || !newDate || newImages.length === 0) return alert("Inserisci titolo, data e almeno una foto!");
     
@@ -122,7 +149,7 @@ export default function Memories() {
         const remainingUploads = newImages.length - i;
         setEstimatedTime(remainingUploads * 3 + 1); 
         setUploadStatus(`Caricamento su Cloud ${i + 1} di ${newImages.length}...`);
-        await new Promise(r => setTimeout(r, 50)); 
+        await new Promise(r => setTimeout(r, 100)); 
 
         const imgName = `memories/${Date.now()}_${i}.jpg`;
         const storageRef = ref(storage, imgName);
@@ -155,7 +182,6 @@ export default function Memories() {
     }
   };
 
-  // MODIFICA FOTO (AGGIUNTA FOTO IN UN RICORDO ESISTENTE)
   const handleAddPhotoToEdit = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
@@ -167,16 +193,13 @@ export default function Memories() {
       const remaining = files.length - i;
       setEstimatedTime(remaining * 4); 
       setUploadStatus(`Elaborazione foto ${i + 1} di ${files.length}...`);
-      await new Promise(r => setTimeout(r, 100)); 
+      await new Promise(r => setTimeout(r, 150)); 
       
       try {
-        // IL TRUCCO MAGICO ANCHE QUI
-        const objectUrl = URL.createObjectURL(files[i]);
-        const compressed = await compressImage(objectUrl);
-        URL.revokeObjectURL(objectUrl); // Libera memoria RAM
+        const compressed = await compressImage(files[i]);
         
         setUploadStatus(`Salvataggio su Cloud ${i + 1} di ${files.length}...`);
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 100));
 
         const imgName = `memories/${Date.now()}_edit_${i}.jpg`;
         const storageRef = ref(storage, imgName);
@@ -192,6 +215,8 @@ export default function Memories() {
     setUploadStatus('');
     setEstimatedTime(null);
     setIsUploading(false);
+    
+    if (editFileInputRef.current) editFileInputRef.current.value = '';
   };
 
   const apriRicordo = (mem: any) => {
@@ -493,7 +518,7 @@ export default function Memories() {
         )}
       </AnimatePresence>
 
-      {/* ----------- INTERFACCIA DI CARICAMENTO AVANZATA (ROTELLINA + TIMER) ----------- */}
+      {/* ----------- INTERFACCIA DI CARICAMENTO AVANZATA ----------- */}
       <AnimatePresence>
         {isUploading && (
           <motion.div 
