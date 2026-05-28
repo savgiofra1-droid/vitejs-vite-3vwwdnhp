@@ -33,87 +33,89 @@ export default function Memories() {
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "ricordi"), (snapshot) => {
       let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
       try {
         docs.sort((a: any, b: any) => {
           const estraiTempo = (item: any) => {
             if (!item) return 0;
-            if (item.date) {
-              const ms = new Date(item.date).getTime();
-              if (!isNaN(ms)) return ms;
-            }
-            if (item.timestamp && typeof item.timestamp.toDate === 'function') {
-              return item.timestamp.toDate().getTime();
-            }
-            if (item.createdAt) {
-              const ms = new Date(item.createdAt).getTime();
-              if (!isNaN(ms)) return ms;
-            }
+            if (item.date) { const ms = new Date(item.date).getTime(); if (!isNaN(ms)) return ms; }
+            if (item.timestamp && typeof item.timestamp.toDate === 'function') return item.timestamp.toDate().getTime();
+            if (item.createdAt) { const ms = new Date(item.createdAt).getTime(); if (!isNaN(ms)) return ms; }
             return 0;
           };
           return estraiTempo(b) - estraiTempo(a);
         });
-      } catch (err) {
-        console.error("Errore nell'ordinamento", err);
-      }
-      
+      } catch (err) { console.error("Errore ordinamento", err); }
       setMemories(docs);
     });
-    
     return () => unsubscribe();
   }, []);
 
+  // FUNZIONE DI COMPRESSIONE VELOCIZZATA
   const compressImage = (dataUrl: string) => {
     return new Promise<string>((resolve) => {
       const img = new Image();
       img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxSize = 1000; 
+        const maxSize = 800; // Dimensione ridotta per massimizzare la velocità senza perdere qualità visiva
         let width = img.width, height = img.height;
         if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
         else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
         canvas.width = width; canvas.height = height;
         canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compressione al 70% per renderle leggerissime
       };
     });
   };
 
+  // LETTURA PARALLELA E NON BLOCCANTE
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
-    const files = Array.from(e.target.files);
     setIsUploading(true);
+    const files = Array.from(e.target.files);
     
-    const compressedImages: string[] = [];
-    for (const file of files) {
-      const reader = new FileReader();
-      const promise = new Promise<string>((resolve) => {
-        reader.onload = async (ev) => resolve(await compressImage(ev.target?.result as string));
+    // Un micro-respiro per permettere a React di mostrare "Caricamento..."
+    await new Promise(r => setTimeout(r, 50)); 
+
+    try {
+      // Elaboriamo tutte le foto CONTEMPORANEAMENTE (Parallelo)
+      const compressionPromises = files.map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = async (ev) => {
+            const compressed = await compressImage(ev.target?.result as string);
+            resolve(compressed);
+          };
+          reader.readAsDataURL(file);
+        });
       });
-      reader.readAsDataURL(file);
-      compressedImages.push(await promise);
+
+      const compressedImages = await Promise.all(compressionPromises);
+      setNewImages(prev => [...prev, ...compressedImages]);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsUploading(false);
     }
-    
-    setNewImages(prev => [...prev, ...compressedImages]);
-    setIsUploading(false);
   };
 
+  // SALVATAGGIO PARALLELO SU FIREBASE
   const handleAddMemory = async () => {
     if (!newTitle || !newDate || newImages.length === 0) return alert("Inserisci titolo, data e almeno una foto!");
     
     try {
       setIsUploading(true);
       const storage = getStorage(db.app);
-      const uploadedUrls: string[] = [];
 
-      for (let i = 0; i < newImages.length; i++) {
-        const imgName = `memories/${Date.now()}_${i}.jpg`;
+      // Carica su Firebase in parallelo, non più una ad una!
+      const uploadPromises = newImages.map(async (imgBase64, idx) => {
+        const imgName = `memories/${Date.now()}_${idx}.jpg`;
         const storageRef = ref(storage, imgName);
-        await uploadString(storageRef, newImages[i], 'data_url');
-        const url = await getDownloadURL(storageRef);
-        uploadedUrls.push(url);
-      }
+        await uploadString(storageRef, imgBase64, 'data_url');
+        return getDownloadURL(storageRef);
+      });
+
+      const uploadedUrls = await Promise.all(uploadPromises);
 
       await addDoc(collection(db, "ricordi"), {
         title: newTitle,
@@ -129,6 +131,40 @@ export default function Memories() {
       setNewImages([]);
     } catch (e) {
       console.error("Errore salvataggio ricordo:", e);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // MODIFICA: AGGIUNTA FOTO PARALLELA E NON BLOCCANTE
+  const handleAddPhotoToEdit = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    setIsUploading(true);
+    const files = Array.from(e.target.files);
+    
+    await new Promise(r => setTimeout(r, 50)); // Respiro UI
+
+    try {
+      const storage = getStorage(db.app);
+
+      const processAndUploadPromises = files.map(async (file, idx) => {
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => resolve(ev.target?.result as string);
+          reader.readAsDataURL(file);
+        });
+
+        const compressed = await compressImage(dataUrl);
+        const imgName = `memories/${Date.now()}_edit_${idx}.jpg`;
+        const storageRef = ref(storage, imgName);
+        await uploadString(storageRef, compressed, 'data_url');
+        return getDownloadURL(storageRef);
+      });
+
+      const nuoveUrls = await Promise.all(processAndUploadPromises);
+      setEditImgUrls(prev => [...prev, ...nuoveUrls]);
+    } catch (err) {
+      console.error("Errore aggiunta foto in modifica:", err);
     } finally {
       setIsUploading(false);
     }
@@ -150,38 +186,6 @@ export default function Memories() {
     setIsEditingMeta(false);
   };
 
-  const handleAddPhotoToEdit = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length) return;
-    const files = Array.from(e.target.files);
-    
-    try {
-      setIsUploading(true);
-      const storage = getStorage(db.app);
-      const nuoveUrls: string[] = [];
-
-      for (const file of files) {
-        const reader = new FileReader();
-        const promise = new Promise<string>((resolve) => {
-          reader.onload = async (ev) => resolve(await compressImage(ev.target?.result as string));
-        });
-        reader.readAsDataURL(file);
-        const compressed = await promise;
-        
-        const imgName = `memories/${Date.now()}_edit.jpg`;
-        const storageRef = ref(storage, imgName);
-        await uploadString(storageRef, compressed, 'data_url');
-        const url = await getDownloadURL(storageRef);
-        nuoveUrls.push(url);
-      }
-
-      setEditImgUrls(prev => [...prev, ...nuoveUrls]);
-    } catch (err) {
-      console.error("Errore aggiunta foto in modifica:", err);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
   const rendiCopertina = (urlScelta: string) => {
     const filtrate = editImgUrls.filter(u => u !== urlScelta);
     setEditImgUrls([urlScelta, ...filtrate]);
@@ -197,13 +201,7 @@ export default function Memories() {
     try {
       setIsUploading(true);
       const memRef = doc(db, "ricordi", selectedMemory.id);
-      
-      await updateDoc(memRef, { 
-        title: editTitle, 
-        date: editDate,
-        imgUrls: editImgUrls 
-      });
-
+      await updateDoc(memRef, { title: editTitle, date: editDate, imgUrls: editImgUrls });
       setSelectedMemory({ ...selectedMemory, title: editTitle, date: editDate, imgUrls: editImgUrls });
       setCurrentImgIndex(0);
       setIsEditingMeta(false);
@@ -253,19 +251,14 @@ export default function Memories() {
     return mem.img || mem.image || mem.imageUrl || mem.url || "";
   };
 
-  // Funzione per estrarre Mese e Anno (es. "MARZO 2026")
   const getMeseAnno = (mem: any) => {
     try {
       let d = new Date();
       if (mem.date) d = new Date(mem.date);
       else if (mem.timestamp?.toDate) d = mem.timestamp.toDate();
       else if (mem.createdAt) d = new Date(mem.createdAt);
-      
-      const formatter = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' });
-      return formatter.format(d).toUpperCase();
-    } catch (e) {
-      return '';
-    }
+      return new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(d).toUpperCase();
+    } catch (e) { return ''; }
   };
 
   return (
@@ -285,7 +278,6 @@ export default function Memories() {
         <div className="grid grid-cols-2 gap-4">
           {(() => {
             let lastMeseAnno = "";
-            
             return memories.map((mem) => {
               const coverImg = getCoverImg(mem);
               const fotoCount = (mem.imgUrls && Array.isArray(mem.imgUrls)) ? mem.imgUrls.length : 1;
@@ -348,10 +340,10 @@ export default function Memories() {
               <input type="text" placeholder="Titolo (es. Viaggio a Roma)" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
               <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-4 rounded-xl text-sm font-bold border border-white/10 flex items-center justify-center gap-2">
-                <ImageIcon size={18} /> Seleziona Foto ({newImages.length} caricate)
+                <ImageIcon size={18} /> {isUploading ? "Elaborazione in corso..." : `Seleziona Foto (${newImages.length} pronte)`}
               </button>
               <input type="file" ref={fileInputRef} hidden accept="image/*" multiple onChange={handleFileChange} />
-              <button onClick={handleAddMemory} disabled={isUploading} className="bg-red-600 py-4 rounded-xl font-bold mt-2 shadow-[0_0_15px_rgba(220,38,38,0.4)]">
+              <button onClick={handleAddMemory} disabled={isUploading || newImages.length === 0} className="bg-red-600 py-4 rounded-xl font-bold mt-2 shadow-[0_0_15px_rgba(220,38,38,0.4)] disabled:opacity-50">
                 {isUploading ? "Salvataggio..." : "Salva Ricordo"}
               </button>
             </div>
@@ -406,7 +398,7 @@ export default function Memories() {
                     </div>
                     
                     <button onClick={() => editFileInputRef.current?.click()} disabled={isUploading} className="w-full bg-white/10 hover:bg-white/20 py-2.5 rounded-xl text-xs font-bold border border-white/5 flex items-center justify-center gap-2 transition-colors">
-                      <Plus size={14} /> {isUploading ? "Caricamento..." : "Aggiungi Foto"}
+                      <Plus size={14} /> {isUploading ? "Elaborazione in corso..." : "Aggiungi Foto"}
                     </button>
                     <input type="file" ref={editFileInputRef} hidden accept="image/*" multiple onChange={handleAddPhotoToEdit} />
                   </div>
