@@ -14,7 +14,8 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(10));
+    // Rimosso il limit() così i contatori possono leggere tutto lo storico
+    const q = query(collection(db, "messages"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });

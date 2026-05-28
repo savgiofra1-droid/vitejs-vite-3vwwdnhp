@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Camera, Trash2, Edit2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { collection, onSnapshot, query, orderBy, deleteDoc, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { Plus, Camera, Trash2, Edit2 } from 'lucide-react';
+import { collection, onSnapshot, query, deleteDoc, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function Memories() {
@@ -13,11 +12,9 @@ export default function Memories() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Query semplificata per evitare errori su timestamp mancanti
     const q = query(collection(db, "ricordi"));
     return onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Ordiniamo lato client per sicurezza
       docs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
       setRicordi(docs);
     });
@@ -52,24 +49,70 @@ export default function Memories() {
     } catch (e) { alert("Errore nel salvataggio"); }
   };
 
+  const getMonthYear = (dataStr: string) => {
+    if (!dataStr) return { sortKey: "0000-00", displayKey: "ALTRI RICORDI" };
+    const s = dataStr.trim().toUpperCase();
+    const months = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"];
+
+    if (s.includes('/')) {
+      const parts = s.split('/');
+      if (parts.length >= 2) {
+        const mStr = parts.length === 3 ? parts[1] : parts[0];
+        const yStr = parts.length === 3 ? parts[2] : parts[1];
+        const m = parseInt(mStr, 10);
+        if (!isNaN(m) && m >= 1 && m <= 12) {
+          return { sortKey: `${yStr}-${m.toString().padStart(2, '0')}`, displayKey: `${months[m - 1]} ${yStr}` };
+        }
+      }
+    } else {
+      const parts = s.split(' ');
+      if (parts.length >= 2) {
+        const mName = parts[parts.length - 2];
+        const yStr = parts[parts.length - 1];
+        const mIndex = months.indexOf(mName);
+        if (mIndex !== -1) {
+          return { sortKey: `${yStr}-${(mIndex + 1).toString().padStart(2, '0')}`, displayKey: `${mName} ${yStr}` };
+        }
+      }
+    }
+    return { sortKey: "0000-00", displayKey: "ALTRI RICORDI" };
+  };
+
+  const grouped = ricordi.reduce((acc: any, r: any) => {
+    const { sortKey, displayKey } = getMonthYear(r.data);
+    if (!acc[sortKey]) acc[sortKey] = { displayKey, items: [] };
+    acc[sortKey].items.push(r);
+    return acc;
+  }, {});
+
+  // Ordina in modo decrescente in base alla sortKey (es. 2026-05 prima di 2026-04)
+  const sortedKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+
   return (
-    <div className="h-full p-4 pb-24 overflow-y-auto bg-black text-white">
+    <div className="h-full p-4 pb-24 overflow-y-auto text-white">
       <div className="flex justify-between items-center mb-6 pt-4">
-        <h2 className="text-2xl font-bold uppercase italic">I Nostri Ricordi</h2>
+        <h2 className="text-2xl font-bold uppercase italic shadow-black drop-shadow-md">I Nostri Ricordi</h2>
         <button onClick={() => setIsAdding(true)} className="bg-red-500 p-3 rounded-full"><Plus /></button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {ricordi.map((r) => (
-          <div key={r.id} className="relative flex flex-col gap-2 bg-white/5 p-2 rounded-2xl">
-            <div className="relative aspect-[3/4] rounded-xl overflow-hidden">
-              <img src={r.img} alt="ricordo" className="w-full h-full object-cover" />
-              <button onClick={() => deleteDoc(doc(db, "ricordi", r.id))} className="absolute top-2 right-2 bg-black/50 p-1 rounded-full"><Trash2 size={14} color="red" /></button>
-              <button onClick={() => { setEditingId(r.id); setFormData({titolo: r.titolo, data: r.data}); setTempImage(r.img); setIsAdding(true); }} className="absolute top-2 left-2 bg-black/50 p-1 rounded-full"><Edit2 size={14} color="white" /></button>
-            </div>
-            <div className="px-1">
-              <p className="font-bold text-sm truncate">{r.titolo}</p>
-              <p className="text-[10px] opacity-60">{r.data}</p>
+      <div className="space-y-8">
+        {sortedKeys.map(key => (
+          <div key={key}>
+            <h3 className="text-red-500 font-bold mb-4 border-b border-white/10 uppercase tracking-widest shadow-black drop-shadow-md">{grouped[key].displayKey}</h3>
+            <div className="grid grid-cols-2 gap-4">
+              {grouped[key].items.map((r: any) => (
+                <div key={r.id} className="relative flex flex-col gap-2 bg-black/40 backdrop-blur-sm p-2 rounded-2xl">
+                  <div className="relative aspect-[3/4] rounded-xl overflow-hidden">
+                    <img src={r.img} alt="ricordo" className="w-full h-full object-cover" />
+                    <button onClick={() => deleteDoc(doc(db, "ricordi", r.id))} className="absolute top-2 right-2 bg-black/50 p-1 rounded-full"><Trash2 size={14} color="red" /></button>
+                    <button onClick={() => { setEditingId(r.id); setFormData({titolo: r.titolo, data: r.data}); setTempImage(r.img); setIsAdding(true); }} className="absolute top-2 left-2 bg-black/50 p-1 rounded-full"><Edit2 size={14} color="white" /></button>
+                  </div>
+                  <div className="px-1">
+                    <p className="font-bold text-sm truncate">{r.titolo}</p>
+                    <p className="text-[10px] opacity-80">{r.data}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ))}
@@ -89,7 +132,7 @@ export default function Memories() {
             }
           }} />
           <input value={formData.titolo} placeholder="Titolo" className="w-full bg-white/10 p-4 rounded-xl" onChange={e => setFormData({...formData, titolo: e.target.value})} />
-          <input value={formData.data} placeholder="Data (es. 28 Maggio 2026)" className="w-full bg-white/10 p-4 rounded-xl" onChange={e => setFormData({...formData, data: e.target.value})} />
+          <input value={formData.data} placeholder="Data (es. 28 Maggio 2026 oppure 28/05/2026)" className="w-full bg-white/10 p-4 rounded-xl" onChange={e => setFormData({...formData, data: e.target.value})} />
           <button onClick={handleSave} className="w-full py-4 bg-red-500 rounded-xl font-bold">Salva</button>
           <button onClick={() => setIsAdding(false)} className="w-full py-2 opacity-50">Annulla</button>
         </div>
