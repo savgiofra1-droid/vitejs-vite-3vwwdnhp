@@ -14,7 +14,7 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, "messages"), orderBy("timestamp", "desc"));
+    const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(10));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });

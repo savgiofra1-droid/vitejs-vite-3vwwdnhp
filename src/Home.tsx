@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Camera, RefreshCw } from 'lucide-react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { Bell, RefreshCw, Edit2 } from 'lucide-react';
+import { collection, addDoc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function Home({ messages, userName }: any) {
   const [time, setTime] = useState(new Date());
   const [tempImg, setTempImg] = useState<string | null>(null);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [textMsg, setTextMsg] = useState('');
   const [showOptions, setShowOptions] = useState(false);
+  const [countdown, setCountdown] = useState<{title: string, date: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dataInizio = new Date('2026-03-16');
@@ -16,13 +17,8 @@ export default function Home({ messages, userName }: any) {
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
-    if (messages.length > 0) {
-      setNotification(`${messages[0].sender} ti pensa!`);
-      const t = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(t);
-    }
     return () => clearInterval(timer);
-  }, [messages]);
+  }, []);
 
   const compressImage = (dataUrl: string) => {
     return new Promise<string>((resolve) => {
@@ -41,46 +37,58 @@ export default function Home({ messages, userName }: any) {
     });
   };
 
-  const sendAction = async (imgData: string | null = null) => {
-    await addDoc(collection(db, "messages"), { sender: userName, img: imgData, timestamp: serverTimestamp() });
-    setTempImg(null); setShowOptions(false);
+  const sendAction = async (imgData: string | null = null, msgText: string = '') => {
+    try {
+      await addDoc(collection(db, "messages"), { 
+        sender: userName, 
+        img: imgData, 
+        text: msgText,
+        timestamp: serverTimestamp() 
+      });
+      setTempImg(null); setTextMsg(''); setShowOptions(false);
+    } catch (e) { console.error("Errore:", e); }
   };
 
   const oggiStr = new Date().toLocaleDateString();
-  const messaggiOggi = messages.filter((m: any) => m.timestamp?.toDate().toLocaleDateString() === oggiStr).length;
+  const messaggiOggi = messages.filter((m: any) => m.timestamp?.toDate ? m.timestamp.toDate().toLocaleDateString() === oggiStr : false).length;
   const cuoriTizzi = messages.filter((m: any) => m.sender === 'Tizzi').length;
   const cuoriSofia = messages.filter((m: any) => m.sender === 'Sofia').length;
 
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto pb-24 text-white">
       <button onClick={() => window.location.reload()} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full z-50"><RefreshCw size={16} /></button>
-      <AnimatePresence>
-        {notification && (
-          <motion.div initial={{ y: -50 }} animate={{ y: 0 }} exit={{ y: -50 }} className="bg-red-500 p-3 rounded-2xl mb-4 flex items-center gap-2 shadow-lg z-50">
-            <Bell size={16} /> <p className="text-sm font-bold">{notification}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
-      <div className="bg-black/40 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center mb-6">
-        <h1 className="text-4xl font-bold">{time.toLocaleTimeString()}</h1>
-        <p className="text-red-400 text-sm font-bold mt-1">{giorniInsieme} giorni insieme</p>
+      <div className="bg-black/40 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center mb-4">
+        <h1 className="text-4xl font-bold">{time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</h1>
+        <div className="mt-2 bg-white/10 py-1 px-3 rounded-full inline-block text-xs font-medium uppercase tracking-widest">
+           {new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </div>
+        <p className="text-red-400 text-sm font-bold mt-2">{giorniInsieme} giorni insieme</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-white/10 p-3 rounded-2xl text-center"><p className="text-[10px] uppercase">Oggi</p><p className="text-xl font-bold">{messaggiOggi}</p></div>
-        <div className="bg-white/10 p-3 rounded-2xl text-center"><p className="text-[10px] uppercase">Totali</p><p className="text-xl font-bold">{messages.length}</p></div>
-        <div className="bg-blue-600/20 p-3 rounded-2xl text-center border border-blue-500/20"><p className="text-[10px] uppercase">Tizzi</p><p className="text-xl font-bold">{cuoriTizzi}</p></div>
-        <div className="bg-pink-600/20 p-3 rounded-2xl text-center border border-pink-500/20"><p className="text-[10px] uppercase">Sofia</p><p className="text-xl font-bold">{cuoriSofia}</p></div>
+      <div className="grid grid-cols-4 gap-2 mb-6">
+        <div className="bg-white/10 p-2 rounded-xl text-center"><p className="text-[9px] opacity-70">Oggi</p><p className="text-lg font-bold">{messaggiOggi}</p></div>
+        <div className="bg-white/10 p-2 rounded-xl text-center"><p className="text-[9px] opacity-70">Tot.</p><p className="text-lg font-bold">{messages.length}</p></div>
+        <div className="bg-blue-600/20 p-2 rounded-xl text-center border border-blue-500/20"><p className="text-[9px] opacity-70">Tizzi</p><p className="text-lg font-bold">{cuoriTizzi}</p></div>
+        <div className="bg-pink-600/20 p-2 rounded-xl text-center border border-pink-500/20"><p className="text-[9px] opacity-70">Sofia</p><p className="text-lg font-bold">{cuoriSofia}</p></div>
       </div>
 
-      <div className="flex flex-col items-center mb-8 gap-2">
+      <div className="bg-gradient-to-r from-red-600/20 to-purple-600/20 p-4 rounded-3xl mb-6 border border-white/10 flex justify-between items-center">
+        <div><p className="text-[10px] uppercase opacity-70">Countdown</p><p className="font-bold">{countdown ? countdown.title : "Nessun evento"}</p><p className="text-xs opacity-50">{countdown ? countdown.date : "--/--/----"}</p></div>
+        <button onClick={() => setCountdown({title: prompt("Titolo:") || '', date: prompt("Data:") || ''})} className="p-2 bg-white/10 rounded-full"><Edit2 size={16}/></button>
+      </div>
+
+      <div className="flex flex-col items-center mb-8 gap-4">
         <motion.button onClick={() => setShowOptions(!showOptions)} className="w-32 h-32 bg-red-600 rounded-full shadow-lg text-5xl">❤️</motion.button>
         {showOptions && (
-          <motion.div className="flex gap-4 mt-2">
-            <button onClick={() => sendAction(null)} className="bg-white/20 px-4 py-2 rounded-xl text-xs font-bold">Solo Cuore</button>
-            <button onClick={() => fileInputRef.current?.click()} className="bg-white/20 px-4 py-2 rounded-xl text-xs font-bold">Con Foto</button>
-          </motion.div>
+          <div className="flex flex-col gap-2 w-full max-w-[250px]">
+            <button onClick={() => sendAction(null)} className="bg-white/10 p-3 rounded-xl text-sm font-bold">Solo Cuore</button>
+            <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-3 rounded-xl text-sm font-bold">Cuore con Foto</button>
+            <div className="flex gap-2">
+              <input placeholder="Scrivi..." value={textMsg} onChange={e => setTextMsg(e.target.value)} className="bg-white/5 p-3 rounded-xl flex-1 text-sm"/>
+              <button onClick={() => sendAction(null, textMsg)} className="bg-red-500 px-4 rounded-xl font-bold">OK</button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -93,13 +101,20 @@ export default function Home({ messages, userName }: any) {
       }} />
 
       <div className="space-y-3">
-        <h3 className="text-xs font-bold opacity-50 uppercase px-2">Attività live</h3>
-        {messages.slice(0, 5).map((m: any) => (
-          <div key={m.id} className="bg-black/40 p-3 rounded-xl text-sm flex justify-between">
-            <span>{m.sender} ha inviato un pensiero</span>
-            <span className="opacity-50">{m.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-          </div>
-        ))}
+        <h3 className="text-xs font-bold opacity-50 uppercase px-2">Attività live (ultimi 10)</h3>
+        {/* Usando slice qui per sicurezza, ma la query ottimizzata in App.tsx gestirà il peso */}
+        {messages.slice(0, 10).map((m: any) => {
+          const d = m.timestamp?.toDate ? m.timestamp.toDate() : new Date();
+          return (
+            <div key={m.id} className="bg-black/40 p-3 rounded-xl text-xs flex justify-between items-center">
+              <span className="flex-1 font-bold">{m.sender} <span className="font-normal opacity-80">{m.img && m.text ? "cuore, foto e testo" : m.img ? "cuore e foto" : m.text ? `testo: "${m.text.substring(0,10)}..."` : "un cuore"}</span></span>
+              <div className="flex gap-1 ml-2">
+                <span className="bg-white/10 px-1.5 py-0.5 rounded">{d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <span className="bg-white/10 px-1.5 py-0.5 rounded">{d.toLocaleDateString()}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
