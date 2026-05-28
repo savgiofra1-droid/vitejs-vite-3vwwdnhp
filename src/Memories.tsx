@@ -18,7 +18,7 @@ export default function Memories() {
   const [newImages, setNewImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(''); 
-  const [estimatedTime, setEstimatedTime] = useState<number | null>(null); // Stato per il tempo stimato
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -52,24 +52,34 @@ export default function Memories() {
     return () => unsubscribe();
   }, []);
 
-  const compressImage = (dataUrl: string) => {
-    return new Promise<string>((resolve) => {
+  // COMPRESSIONE SUPER-OTTIMIZZATA PER IPHONE (Evita crash di memoria RAM)
+  const compressImage = (url: string) => {
+    return new Promise<string>((resolve, reject) => {
       const img = new Image();
-      img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxSize = 600; 
+        const maxSize = 800; // Leggermente più grande per qualità migliore, ma sicurissimo con ObjectURL
         let width = img.width, height = img.height;
-        if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
-        else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+        if (width > height) { 
+          if (width > maxSize) { height *= maxSize / width; width = maxSize; } 
+        } else { 
+          if (height > maxSize) { width *= maxSize / height; height = maxSize; } 
+        }
         canvas.width = width; canvas.height = height;
-        canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6)); 
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        } else {
+          reject(new Error("Canvas non supportato"));
+        }
       };
+      img.onerror = (err) => reject(err);
+      img.src = url;
     });
   };
 
-  // COMPRESSIONE IN CODA CON CALCOLO TEMPO STIMATO
+  // LETTURA FOTO (NUOVO RICORDO)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
@@ -78,16 +88,19 @@ export default function Memories() {
 
     for (let i = 0; i < files.length; i++) {
       const remainingFiles = files.length - i;
-      setEstimatedTime(remainingFiles * 2); // Circa 2 secondi a foto per elaborarla
+      setEstimatedTime(remainingFiles * 2); 
       setUploadStatus(`Compressione foto ${i + 1} di ${files.length}...`);
-      await new Promise(r => setTimeout(r, 50)); 
+      await new Promise(r => setTimeout(r, 100)); // Respiro UI
 
-      const compressed = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = async (ev) => resolve(await compressImage(ev.target?.result as string));
-        reader.readAsDataURL(files[i]);
-      });
-      compressedImages.push(compressed);
+      try {
+        // IL TRUCCO MAGICO: Evita FileReader e usa un link temporaneo alla memoria
+        const objectUrl = URL.createObjectURL(files[i]);
+        const compressed = await compressImage(objectUrl);
+        URL.revokeObjectURL(objectUrl); // SVUOTA SUBITO LA RAM DELL'IPHONE
+        compressedImages.push(compressed);
+      } catch (err) {
+        console.error("Errore caricamento foto", err);
+      }
     }
     
     setNewImages(prev => [...prev, ...compressedImages]);
@@ -96,7 +109,7 @@ export default function Memories() {
     setIsUploading(false);
   };
 
-  // SALVATAGGIO IN CODA CON CALCOLO TEMPO STIMATO CLOUD
+  // SALVATAGGIO CLOUD (NUOVO RICORDO)
   const handleAddMemory = async () => {
     if (!newTitle || !newDate || newImages.length === 0) return alert("Inserisci titolo, data e almeno una foto!");
     
@@ -107,7 +120,7 @@ export default function Memories() {
 
       for (let i = 0; i < newImages.length; i++) {
         const remainingUploads = newImages.length - i;
-        setEstimatedTime(remainingUploads * 3 + 1); // Circa 3 secondi ad upload + 1s finale
+        setEstimatedTime(remainingUploads * 3 + 1); 
         setUploadStatus(`Caricamento su Cloud ${i + 1} di ${newImages.length}...`);
         await new Promise(r => setTimeout(r, 50)); 
 
@@ -134,6 +147,7 @@ export default function Memories() {
       setNewImages([]);
     } catch (e) {
       console.error("Errore salvataggio ricordo:", e);
+      alert("Si è verificato un errore durante il salvataggio.");
     } finally {
       setUploadStatus('');
       setEstimatedTime(null);
@@ -141,7 +155,7 @@ export default function Memories() {
     }
   };
 
-  // MODIFICA FOTO CON TIMER DI PROCESSO COMPLETO
+  // MODIFICA FOTO (AGGIUNTA FOTO IN UN RICORDO ESISTENTE)
   const handleAddPhotoToEdit = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
@@ -149,35 +163,35 @@ export default function Memories() {
     const nuoveUrls: string[] = [];
     const storage = getStorage(db.app);
 
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const remaining = files.length - i;
-        setEstimatedTime(remaining * 4); // Compressione + upload integrato ~4s a foto
-        setUploadStatus(`Ottimizzazione e invio foto ${i + 1} di ${files.length}...`);
-        await new Promise(r => setTimeout(r, 50)); 
+    for (let i = 0; i < files.length; i++) {
+      const remaining = files.length - i;
+      setEstimatedTime(remaining * 4); 
+      setUploadStatus(`Elaborazione foto ${i + 1} di ${files.length}...`);
+      await new Promise(r => setTimeout(r, 100)); 
+      
+      try {
+        // IL TRUCCO MAGICO ANCHE QUI
+        const objectUrl = URL.createObjectURL(files[i]);
+        const compressed = await compressImage(objectUrl);
+        URL.revokeObjectURL(objectUrl); // Libera memoria RAM
         
-        const dataUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (ev) => resolve(ev.target?.result as string);
-          reader.readAsDataURL(files[i]);
-        });
+        setUploadStatus(`Salvataggio su Cloud ${i + 1} di ${files.length}...`);
+        await new Promise(r => setTimeout(r, 50));
 
-        const compressed = await compressImage(dataUrl);
         const imgName = `memories/${Date.now()}_edit_${i}.jpg`;
         const storageRef = ref(storage, imgName);
         await uploadString(storageRef, compressed, 'data_url');
         const url = await getDownloadURL(storageRef);
         nuoveUrls.push(url);
+      } catch (err) {
+        console.error("Errore durante elaborazione e invio della foto:", err);
       }
-
-      setEditImgUrls(prev => [...prev, ...nuoveUrls]);
-    } catch (err) {
-      console.error("Errore aggiunta foto in modifica:", err);
-    } finally {
-      setUploadStatus('');
-      setEstimatedTime(null);
-      setIsUploading(false);
     }
+
+    setEditImgUrls(prev => [...prev, ...nuoveUrls]);
+    setUploadStatus('');
+    setEstimatedTime(null);
+    setIsUploading(false);
   };
 
   const apriRicordo = (mem: any) => {
@@ -411,7 +425,7 @@ export default function Memories() {
                       ))}
                     </div>
                     
-                    <button onClick={() => editFileInputRef.current?.click()} disabled={isUploading} className="w-full bg-white/10 hover:bg-white/20 py-2.5 rounded-xl text-xs font-bold border border-white/5 flex items-center justify-center gap-2 transition-colors">
+                    <button onClick={() => editFileInputRef.current?.click()} className="w-full bg-white/10 hover:bg-white/20 py-2.5 rounded-xl text-xs font-bold border border-white/5 flex items-center justify-center gap-2 transition-colors">
                       <Plus size={14} /> Aggiungi Foto
                     </button>
                     <input type="file" ref={editFileInputRef} hidden accept="image/*" multiple onChange={handleAddPhotoToEdit} />
