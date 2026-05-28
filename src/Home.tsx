@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Edit2, X, ChevronRight } from 'lucide-react';
 import { collection, addDoc, serverTimestamp, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db } from './firebase';
 
 export default function Home({ messages, userName }: any) {
@@ -11,18 +12,17 @@ export default function Home({ messages, userName }: any) {
   const [showOptions, setShowOptions] = useState(false);
   const [countdown, setCountdown] = useState<{title: string, date: string} | null>(null);
   const [selectedLiveMessage, setSelectedLiveMessage] = useState<any | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dataInizio = new Date('2026-03-16');
   const giorniInsieme = Math.floor((new Date().getTime() - dataInizio.getTime()) / (1000 * 60 * 60 * 24));
 
-  // Orologio
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Ascolto in tempo reale del Countdown da Firebase
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, "settings", "countdown"), (docSnap) => {
       if (docSnap.exists()) {
@@ -32,10 +32,9 @@ export default function Home({ messages, userName }: any) {
     return () => unsubscribe();
   }, []);
 
-  // Salvataggio del Countdown su Firebase
   const handleSetCountdown = async () => {
     const title = prompt("Titolo dell'evento:", countdown?.title || '') || '';
-    if (!title) return; // Se annulli, non fa nulla
+    if (!title) return;
     
     const date = prompt("Data e ora dell'evento (Formato: YYYY-MM-DD HH:MM):", countdown?.date || "2026-12-31 00:00") || '';
     if (title && date) {
@@ -69,27 +68,42 @@ export default function Home({ messages, userName }: any) {
       img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxSize = 600;
+        const maxSize = 800; 
         let width = img.width, height = img.height;
         if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
         else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
         canvas.width = width; canvas.height = height;
         canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
       };
     });
   };
 
   const sendAction = async (imgData: string | null = null, msgText: string = '') => {
     try {
+      setIsUploading(true);
+      let finalImgUrl = null;
+      
+      if (imgData) {
+        const storage = getStorage(db.app);
+        const imgName = `uploads/${Date.now()}_${userName}.jpg`;
+        const storageRef = ref(storage, imgName);
+        await uploadString(storageRef, imgData, 'data_url');
+        finalImgUrl = await getDownloadURL(storageRef);
+      }
+
       await addDoc(collection(db, "messages"), { 
         sender: userName, 
-        img: imgData, 
+        img: finalImgUrl, 
         text: msgText,
         timestamp: serverTimestamp() 
       });
-      setTempImg(null); setTextMsg(''); setShowOptions(false);
-    } catch (e) { console.error("Errore:", e); }
+      
+      setTempImg(null); setTextMsg(''); setShowOptions(false); setIsUploading(false);
+    } catch (e) { 
+      console.error("Errore:", e); 
+      setIsUploading(false);
+    }
   };
 
   const oggiStr = new Date().toLocaleDateString();
@@ -98,49 +112,66 @@ export default function Home({ messages, userName }: any) {
   const cuoriSofia = messages.filter((m: any) => m.sender === 'Sofia').length;
 
   return (
-    <div className="flex flex-col h-full p-4 overflow-y-auto pb-24 text-white">
-      <button onClick={() => window.location.reload()} className="absolute top-4 right-4 bg-white/10 p-2 rounded-full z-50"><RefreshCw size={16} /></button>
+    <div className="flex flex-col h-full p-4 pt-16 overflow-y-auto pb-24 text-white">
+      {/* Spostato il tasto di ricarica leggermente più in basso per non coprire la firma */}
+      <button onClick={() => window.location.reload()} className="absolute top-12 right-4 bg-black/40 border border-white/10 p-2 rounded-full z-50 backdrop-blur-md">
+        <RefreshCw size={16} />
+      </button>
 
-      {/* Box Ora e Data */}
+      {/* Box Ora e Data - Tornato allo stile pulito originale */}
       <div className="bg-black/40 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center mb-4">
-        <h1 className="text-4xl font-bold">{time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</h1>
+        <h1 className="text-4xl font-bold leading-tight">{time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</h1>
         <div className="mt-2 bg-white/10 py-1 px-3 rounded-full inline-block text-xs font-medium uppercase tracking-widest">
            {new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
         </div>
         <p className="text-red-400 text-sm font-bold mt-2">{giorniInsieme} giorni insieme</p>
       </div>
 
-      {/* Statistiche */}
+      {/* Statistiche - Pulite */}
       <div className="grid grid-cols-4 gap-2 mb-6">
-        <div className="bg-white/10 p-2 rounded-xl text-center"><p className="text-[9px] opacity-70">Oggi</p><p className="text-lg font-bold">{messaggiOggi}</p></div>
-        <div className="bg-white/10 p-2 rounded-xl text-center"><p className="text-[9px] opacity-70">Tot.</p><p className="text-lg font-bold">{messages.length}</p></div>
-        <div className="bg-blue-600/20 p-2 rounded-xl text-center border border-blue-500/20"><p className="text-[9px] opacity-70">Tizzi</p><p className="text-lg font-bold">{cuoriTizzi}</p></div>
-        <div className="bg-pink-600/20 p-2 rounded-xl text-center border border-pink-500/20"><p className="text-[9px] opacity-70">Sofia</p><p className="text-lg font-bold">{cuoriSofia}</p></div>
+        <div className="bg-white/10 backdrop-blur-md p-2 rounded-xl text-center border border-white/5"><p className="text-[9px] opacity-70">Oggi</p><p className="text-lg font-bold">{messaggiOggi}</p></div>
+        <div className="bg-white/10 backdrop-blur-md p-2 rounded-xl text-center border border-white/5"><p className="text-[9px] opacity-70">Tot.</p><p className="text-lg font-bold">{messages.length}</p></div>
+        <div className="bg-blue-600/20 backdrop-blur-md p-2 rounded-xl text-center border border-blue-500/20"><p className="text-[9px] opacity-70">Tizzi</p><p className="text-lg font-bold">{cuoriTizzi}</p></div>
+        <div className="bg-pink-600/20 backdrop-blur-md p-2 rounded-xl text-center border border-pink-500/20"><p className="text-[9px] opacity-70">Sofia</p><p className="text-lg font-bold">{cuoriSofia}</p></div>
       </div>
 
-      {/* Countdown Box (ora sincronizzato via Firebase) */}
-      <div className="bg-gradient-to-r from-red-600/20 to-purple-600/20 p-4 rounded-3xl mb-6 border border-white/10 flex justify-between items-center">
+      {/* Countdown Box - Stile precedente e funzionante */}
+      <div className="bg-gradient-to-r from-red-600/20 to-purple-600/20 backdrop-blur-md p-4 rounded-3xl mb-6 border border-white/10 flex justify-between items-center">
         <div>
           <p className="text-[10px] uppercase opacity-70 tracking-wider">Countdown</p>
           <p className="font-bold text-base">{countdown ? countdown.title : "Nessun evento"}</p>
           <p className="text-sm font-mono text-red-400 mt-0.5 font-bold">{getCountdownString()}</p>
         </div>
-        <button onClick={handleSetCountdown} className="p-2 bg-white/10 rounded-full"><Edit2 size={16}/></button>
+        <button onClick={handleSetCountdown} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><Edit2 size={16}/></button>
       </div>
 
       {/* Pulsantone Cuore */}
       <div className="flex flex-col items-center mb-8 gap-4">
-        <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowOptions(!showOptions)} className="w-32 h-32 bg-red-600 rounded-full shadow-lg text-5xl flex items-center justify-center">❤️</motion.button>
-        {showOptions && (
-          <div className="flex flex-col gap-2 w-full max-w-[250px]">
-            <button onClick={() => sendAction(null)} className="bg-white/10 p-3 rounded-xl text-sm font-bold">Solo Cuore</button>
-            <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-3 rounded-xl text-sm font-bold">Cuore con Foto</button>
-            <div className="flex gap-2">
-              <input placeholder="Scrivi..." value={textMsg} onChange={e => setTextMsg(e.target.value)} className="bg-white/5 p-3 rounded-xl flex-1 text-sm text-white focus:outline-none border border-white/10"/>
-              <button onClick={() => sendAction(null, textMsg)} className="bg-red-500 px-4 rounded-xl font-bold">OK</button>
-            </div>
-          </div>
-        )}
+        <motion.button 
+          whileTap={{ scale: 0.9 }} 
+          onClick={() => setShowOptions(!showOptions)} 
+          className="w-32 h-32 bg-red-600 rounded-full shadow-lg text-5xl flex items-center justify-center border border-red-500/50"
+        >
+          ❤️
+        </motion.button>
+        
+        <AnimatePresence>
+          {showOptions && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex flex-col gap-2 w-full max-w-[250px] bg-black/50 backdrop-blur-md p-3 rounded-3xl border border-white/10"
+            >
+              <button onClick={() => sendAction(null)} className="bg-white/10 p-3 rounded-xl text-sm font-bold">Solo Cuore</button>
+              <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-3 rounded-xl text-sm font-bold">Cuore con Foto</button>
+              <div className="flex gap-2">
+                <input placeholder="Scrivi..." value={textMsg} onChange={e => setTextMsg(e.target.value)} className="bg-white/5 p-3 rounded-xl flex-1 text-sm text-white focus:outline-none border border-white/10"/>
+                <button onClick={() => sendAction(null, textMsg)} className="bg-red-500 px-4 rounded-xl font-bold">OK</button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={async (e) => {
@@ -154,7 +185,7 @@ export default function Home({ messages, userName }: any) {
       {/* Attività Live */}
       <div className="space-y-3">
         <h3 className="text-xs font-bold opacity-50 uppercase px-2 flex items-center gap-2">
-          Attività live (ultimi 10) 
+          Attività live (ultimi 10)
           <span className="normal-case text-[10px] opacity-70 italic text-red-300">(clicca per espandere)</span>
         </h3>
         {messages.slice(0, 10).map((m: any) => {
@@ -168,7 +199,6 @@ export default function Home({ messages, userName }: any) {
               <span className="flex-1 font-bold">{m.sender} <span className="font-normal opacity-80">{m.img && m.text ? "cuore, foto e testo" : m.img ? "cuore e foto" : m.text ? `testo: "${m.text.substring(0,10)}..."` : "un cuore"}</span></span>
               <div className="flex items-center gap-1 ml-2">
                 <span className="bg-white/10 px-1.5 py-0.5 rounded">{d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                <span className="bg-white/10 px-1.5 py-0.5 rounded hidden sm:inline-block">{d.toLocaleDateString()}</span>
                 <ChevronRight size={16} className="text-red-400 opacity-70 ml-1" />
               </div>
             </div>
@@ -208,17 +238,19 @@ export default function Home({ messages, userName }: any) {
         )}
       </AnimatePresence>
 
-      {/* Invio Foto Temporanea */}
+      {/* Modal Invio Foto (con stato di caricamento) */}
       <AnimatePresence>
         {tempImg && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black p-6 flex flex-col justify-center">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md p-6 flex flex-col justify-center">
             <img src={tempImg} className="w-full rounded-3xl mb-4 max-h-[60vh] object-contain" />
             <div className="flex gap-2 mb-4">
               <input placeholder="Aggiungi messaggio..." value={textMsg} onChange={e => setTextMsg(e.target.value)} className="bg-white/5 p-4 rounded-2xl flex-1 text-sm text-white focus:outline-none border border-white/10"/>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setTempImg(null)} className="bg-white/10 flex-1 py-4 rounded-2xl font-bold text-sm">Annulla</button>
-              <button onClick={() => sendAction(tempImg, textMsg)} className="bg-red-600 flex-[2] py-4 rounded-2xl font-bold text-sm">Invia</button>
+              <button onClick={() => setTempImg(null)} disabled={isUploading} className="bg-white/10 flex-1 py-4 rounded-2xl font-bold text-sm">Annulla</button>
+              <button onClick={() => sendAction(tempImg, textMsg)} disabled={isUploading} className="bg-red-600 flex-[2] py-4 rounded-2xl font-bold text-sm">
+                {isUploading ? "Invio in corso..." : "Invia"}
+              </button>
             </div>
           </motion.div>
         )}

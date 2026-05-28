@@ -1,0 +1,16 @@
+{
+    "name": "Tizzi & Sofia",
+    "short_name": "Tizzi & Sofia",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#000000",
+    "theme_color": "#dc2626",
+    "icons": [
+      {
+        "src": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Heart_coraz%C3%B3n.svg",
+        "sizes": "192x192",
+        "type": "image/svg+xml"
+      }
+    ]
+  }
+  
