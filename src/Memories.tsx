@@ -58,7 +58,6 @@ export default function Memories() {
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
       
-      // Imposta un timeout di sicurezza di 10 secondi per singola foto
       const timeout = setTimeout(() => {
         URL.revokeObjectURL(objectUrl);
         reject(new Error("Timeout compressione"));
@@ -67,7 +66,7 @@ export default function Memories() {
       img.onload = () => {
         clearTimeout(timeout);
         const canvas = document.createElement('canvas');
-        const maxSize = 700; // Ottimizzato per caricamenti rapidissimi su Safari mobile
+        const maxSize = 700; 
         let width = img.width;
         let height = img.height;
 
@@ -83,9 +82,8 @@ export default function Memories() {
         
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const base64Result = canvas.toDataURL('image/jpeg', 0.55); // Bilanciamento perfetto peso/qualità
+          const base64Result = canvas.toDataURL('image/jpeg', 0.55); 
           
-          // Pulizia immediata della memoria di Safari
           canvas.width = 0;
           canvas.height = 0;
           URL.revokeObjectURL(objectUrl);
@@ -116,7 +114,7 @@ export default function Memories() {
       const remainingFiles = files.length - i;
       setEstimatedTime(remainingFiles * 2); 
       setUploadStatus(`Ottimizzazione foto ${i + 1} di ${files.length}...`);
-      await new Promise(r => setTimeout(r, 100)); // Rilascia la UI per non freezare lo schermo
+      await new Promise(r => setTimeout(r, 100)); 
 
       try {
         const compressed = await compressImage(files[i]);
@@ -250,7 +248,7 @@ export default function Memories() {
       setIsEditingMeta(false);
     } catch (e) {
       console.error(e);
-    } finaly {
+    } finally {
       setUploadStatus('');
       setIsUploading(false);
     }
@@ -504,7 +502,7 @@ export default function Memories() {
         )}
       </AnimatePresence>
 
-      {/* OVERLAY DI CARICAMENTO GLOBALE CON TIMER */}
+      {/* OVERLAY DI CARICAMENTO GLOBALE CON TIMER E ROTELLINA */}
       <AnimatePresence>
         {isUploading && (
           <motion.div 
