@@ -52,33 +52,25 @@ export default function Memories() {
     return () => unsubscribe();
   }, []);
 
-  // IL MOTORE ANTI-CRASH PER IPHONE (Svuota aggressivamente la RAM)
-  const compressImage = async (file: File): Promise<string> => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        let width: number, height: number;
-        let imgObj: ImageBitmap | HTMLImageElement;
-        
-        // Usa il processore grafico se disponibile (iOS 15+)
-        if (window.createImageBitmap) {
-          imgObj = await createImageBitmap(file);
-          width = imgObj.width;
-          height = imgObj.height;
-        } else {
-          // Metodo classico di riserva
-          imgObj = new Image();
-          const objectUrl = URL.createObjectURL(file);
-          await new Promise<void>((res, rej) => {
-            imgObj.onload = () => { URL.revokeObjectURL(objectUrl); res(); };
-            imgObj.onerror = rej;
-            (imgObj as HTMLImageElement).src = objectUrl;
-          });
-          width = imgObj.width;
-          height = imgObj.height;
-        }
+  // SISTEMA DI COMPRESSIONE ANTI-CRASH COMPATIBILE CON IPHONE
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      
+      // Imposta un timeout di sicurezza di 10 secondi per singola foto
+      const timeout = setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Timeout compressione"));
+      }, 10000);
 
+      img.onload = () => {
+        clearTimeout(timeout);
         const canvas = document.createElement('canvas');
-        const maxSize = 800;
+        const maxSize = 700; // Ottimizzato per caricamenti rapidissimi su Safari mobile
+        let width = img.width;
+        let height = img.height;
+
         if (width > height) {
           if (width > maxSize) { height = Math.round(height * (maxSize / width)); width = maxSize; }
         } else {
@@ -88,22 +80,29 @@ export default function Memories() {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
+        
         if (ctx) {
-          ctx.drawImage(imgObj, 0, 0, width, height);
-          const result = canvas.toDataURL('image/jpeg', 0.6); // Compressione al 60%
+          ctx.drawImage(img, 0, 0, width, height);
+          const base64Result = canvas.toDataURL('image/jpeg', 0.55); // Bilanciamento perfetto peso/qualità
           
-          // DISTRUZIONE IMMEDIATA PER LIBERARE RAM SU IPHONE
-          if ('close' in imgObj) (imgObj as ImageBitmap).close();
+          // Pulizia immediata della memoria di Safari
           canvas.width = 0;
           canvas.height = 0;
-          
-          resolve(result);
+          URL.revokeObjectURL(objectUrl);
+          resolve(base64Result);
         } else {
-          reject(new Error("Errore Canvas"));
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("Errore Canvas Context"));
         }
-      } catch (err) {
-        reject(err);
-      }
+      };
+
+      img.onerror = () => {
+        clearTimeout(timeout);
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Errore caricamento immagine"));
+      };
+
+      img.src = objectUrl;
     });
   };
 
@@ -116,16 +115,14 @@ export default function Memories() {
     for (let i = 0; i < files.length; i++) {
       const remainingFiles = files.length - i;
       setEstimatedTime(remainingFiles * 2); 
-      setUploadStatus(`Compressione foto ${i + 1} di ${files.length}...`);
-      
-      // Doppio respiro per permettere al telefono di aggiornare la grafica e non bloccarsi
-      await new Promise(r => setTimeout(r, 150)); 
+      setUploadStatus(`Ottimizzazione foto ${i + 1} di ${files.length}...`);
+      await new Promise(r => setTimeout(r, 100)); // Rilascia la UI per non freezare lo schermo
 
       try {
         const compressed = await compressImage(files[i]);
         compressedImages.push(compressed);
       } catch (err) {
-        console.error("Errore caricamento foto", err);
+        console.error("Salto una foto corrotta o pesante: ", err);
       }
     }
     
@@ -133,7 +130,6 @@ export default function Memories() {
     setUploadStatus('');
     setEstimatedTime(null);
     setIsUploading(false);
-    
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -147,9 +143,9 @@ export default function Memories() {
 
       for (let i = 0; i < newImages.length; i++) {
         const remainingUploads = newImages.length - i;
-        setEstimatedTime(remainingUploads * 3 + 1); 
-        setUploadStatus(`Caricamento su Cloud ${i + 1} di ${newImages.length}...`);
-        await new Promise(r => setTimeout(r, 100)); 
+        setEstimatedTime(remainingUploads * 3); 
+        setUploadStatus(`Invio su database ${i + 1} di ${newImages.length}...`);
+        await new Promise(r => setTimeout(r, 50)); 
 
         const imgName = `memories/${Date.now()}_${i}.jpg`;
         const storageRef = ref(storage, imgName);
@@ -158,8 +154,7 @@ export default function Memories() {
         uploadedUrls.push(url);
       }
 
-      setUploadStatus("Creazione del capitolo diario...");
-      setEstimatedTime(1);
+      setUploadStatus("Scrittura sul diario...");
       await addDoc(collection(db, "ricordi"), {
         title: newTitle,
         date: newDate,
@@ -173,8 +168,8 @@ export default function Memories() {
       setNewDate('');
       setNewImages([]);
     } catch (e) {
-      console.error("Errore salvataggio ricordo:", e);
-      alert("Si è verificato un errore durante il salvataggio.");
+      console.error(e);
+      alert("Errore durante il salvataggio.");
     } finally {
       setUploadStatus('');
       setEstimatedTime(null);
@@ -193,13 +188,12 @@ export default function Memories() {
       const remaining = files.length - i;
       setEstimatedTime(remaining * 4); 
       setUploadStatus(`Elaborazione foto ${i + 1} di ${files.length}...`);
-      await new Promise(r => setTimeout(r, 150)); 
+      await new Promise(r => setTimeout(r, 100)); 
       
       try {
         const compressed = await compressImage(files[i]);
-        
-        setUploadStatus(`Salvataggio su Cloud ${i + 1} di ${files.length}...`);
-        await new Promise(r => setTimeout(r, 100));
+        setUploadStatus(`Integrazione foto ${i + 1} di ${files.length}...`);
+        await new Promise(r => setTimeout(r, 50));
 
         const imgName = `memories/${Date.now()}_edit_${i}.jpg`;
         const storageRef = ref(storage, imgName);
@@ -207,7 +201,7 @@ export default function Memories() {
         const url = await getDownloadURL(storageRef);
         nuoveUrls.push(url);
       } catch (err) {
-        console.error("Errore durante elaborazione e invio della foto:", err);
+        console.error(err);
       }
     }
 
@@ -215,7 +209,6 @@ export default function Memories() {
     setUploadStatus('');
     setEstimatedTime(null);
     setIsUploading(false);
-    
     if (editFileInputRef.current) editFileInputRef.current.value = '';
   };
 
@@ -249,18 +242,16 @@ export default function Memories() {
     if (!selectedMemory || editImgUrls.length === 0) return;
     try {
       setIsUploading(true);
-      setUploadStatus("Aggiornamento dell'album...");
-      setEstimatedTime(2);
+      setUploadStatus("Salvataggio modifiche...");
       const memRef = doc(db, "ricordi", selectedMemory.id);
       await updateDoc(memRef, { title: editTitle, date: editDate, imgUrls: editImgUrls });
       setSelectedMemory({ ...selectedMemory, title: editTitle, date: editDate, imgUrls: editImgUrls });
       setCurrentImgIndex(0);
       setIsEditingMeta(false);
     } catch (e) {
-      console.error("Errore salvataggio modifiche:", e);
-    } finally {
+      console.error(e);
+    } finaly {
       setUploadStatus('');
-      setEstimatedTime(null);
       setIsUploading(false);
     }
   };
@@ -270,9 +261,7 @@ export default function Memories() {
       try {
         await deleteDoc(doc(db, "ricordi", selectedMemory.id));
         setSelectedMemory(null);
-      } catch (e) {
-        console.error("Errore eliminazione:", e);
-      }
+      } catch (e) { console.error(e); }
     }
   };
 
@@ -284,11 +273,8 @@ export default function Memories() {
       const updatedComments = { ...(selectedMemory.comments || {}), [userName]: myComment.trim() };
       await updateDoc(memRef, { comments: updatedComments });
       setSelectedMemory({ ...selectedMemory, comments: updatedComments });
-    } catch (e) {
-      console.error("Errore salvataggio commento:", e);
-    } finally {
-      setIsSavingComment(false);
-    }
+    } catch (e) { console.error(e); } 
+    finally { setIsSavingComment(false); }
   };
 
   const formattaData = (mem: any) => {
@@ -395,7 +381,7 @@ export default function Memories() {
               <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-4 rounded-xl text-sm font-bold border border-white/10 flex items-center justify-center gap-2">
                 <ImageIcon size={18} /> Seleziona Foto ({newImages.length} pronte)
               </button>
-              <input type="file" ref={fileInputRef} hidden accept="image/*" multiple onChange={handleFileChange} />
+              <input type="file" ref={fileInputRef} hidden accept="image/jpeg, image/png, image/jpg" multiple onChange={handleFileChange} />
               <button onClick={handleAddMemory} disabled={isUploading || newImages.length === 0} className="bg-red-600 py-4 rounded-xl font-bold mt-2 shadow-[0_0_15px_rgba(220,38,38,0.4)] disabled:opacity-50">
                 Salva Ricordo
               </button>
@@ -404,7 +390,7 @@ export default function Memories() {
         )}
       </AnimatePresence>
 
-      {/* MODALE RICORDO ESPANSO E VISUALIZZAZIONE DETTAGLI */}
+      {/* MODALE RICORDO ESPANSO E DETTAGLI */}
       <AnimatePresence>
         {selectedMemory && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex flex-col pt-12">
@@ -453,7 +439,7 @@ export default function Memories() {
                     <button onClick={() => editFileInputRef.current?.click()} className="w-full bg-white/10 hover:bg-white/20 py-2.5 rounded-xl text-xs font-bold border border-white/5 flex items-center justify-center gap-2 transition-colors">
                       <Plus size={14} /> Aggiungi Foto
                     </button>
-                    <input type="file" ref={editFileInputRef} hidden accept="image/*" multiple onChange={handleAddPhotoToEdit} />
+                    <input type="file" ref={editFileInputRef} hidden accept="image/jpeg, image/png, image/jpg" multiple onChange={handleAddPhotoToEdit} />
                   </div>
 
                   <div className="flex gap-2 w-full mt-4">
@@ -518,7 +504,7 @@ export default function Memories() {
         )}
       </AnimatePresence>
 
-      {/* ----------- INTERFACCIA DI CARICAMENTO AVANZATA ----------- */}
+      {/* OVERLAY DI CARICAMENTO GLOBALE CON TIMER */}
       <AnimatePresence>
         {isUploading && (
           <motion.div 
