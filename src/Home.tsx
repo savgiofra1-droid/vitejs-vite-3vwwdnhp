@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Edit2, X, ChevronRight } from 'lucide-react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function Home({ messages, userName }: any) {
@@ -9,28 +9,41 @@ export default function Home({ messages, userName }: any) {
   const [tempImg, setTempImg] = useState<string | null>(null);
   const [textMsg, setTextMsg] = useState('');
   const [showOptions, setShowOptions] = useState(false);
-  const [countdown, setCountdown] = useState<{title: string, date: string} | null>(() => {
-    const saved = localStorage.getItem('home_countdown');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [countdown, setCountdown] = useState<{title: string, date: string} | null>(null);
   const [selectedLiveMessage, setSelectedLiveMessage] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dataInizio = new Date('2026-03-16');
   const giorniInsieme = Math.floor((new Date().getTime() - dataInizio.getTime()) / (1000 * 60 * 60 * 24));
 
+  // Orologio
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const handleSetCountdown = () => {
-    const title = prompt("Titolo dell'evento:") || '';
-    const date = prompt("Data e ora dell'evento (Formato: YYYY-MM-DD HH:MM):", "2026-12-31 00:00") || '';
+  // Ascolto in tempo reale del Countdown da Firebase
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, "settings", "countdown"), (docSnap) => {
+      if (docSnap.exists()) {
+        setCountdown(docSnap.data() as {title: string, date: string});
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Salvataggio del Countdown su Firebase
+  const handleSetCountdown = async () => {
+    const title = prompt("Titolo dell'evento:", countdown?.title || '') || '';
+    if (!title) return; // Se annulli, non fa nulla
+    
+    const date = prompt("Data e ora dell'evento (Formato: YYYY-MM-DD HH:MM):", countdown?.date || "2026-12-31 00:00") || '';
     if (title && date) {
-      const newCountdown = { title, date };
-      setCountdown(newCountdown);
-      localStorage.setItem('home_countdown', JSON.stringify(newCountdown));
+      try {
+        await setDoc(doc(db, "settings", "countdown"), { title, date });
+      } catch (error) {
+        console.error("Errore salvataggio countdown:", error);
+      }
     }
   };
 
@@ -105,7 +118,7 @@ export default function Home({ messages, userName }: any) {
         <div className="bg-pink-600/20 p-2 rounded-xl text-center border border-pink-500/20"><p className="text-[9px] opacity-70">Sofia</p><p className="text-lg font-bold">{cuoriSofia}</p></div>
       </div>
 
-      {/* Countdown Box */}
+      {/* Countdown Box (ora sincronizzato via Firebase) */}
       <div className="bg-gradient-to-r from-red-600/20 to-purple-600/20 p-4 rounded-3xl mb-6 border border-white/10 flex justify-between items-center">
         <div>
           <p className="text-[10px] uppercase opacity-70 tracking-wider">Countdown</p>
