@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, ChevronLeft, ChevronRight, Image as ImageIcon, MessageCircle, Edit2, Trash2, Star } from 'lucide-react';
+import { Plus, X, ChevronLeft, ChevronRight, Image as ImageIcon, MessageCircle, Edit2, Trash2, Star, Loader2 } from 'lucide-react';
 import { collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db } from './firebase';
@@ -17,7 +17,8 @@ export default function Memories() {
   const [newDate, setNewDate] = useState('');
   const [newImages, setNewImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState(''); // Nuovo stato per il testo di caricamento
+  const [uploadStatus, setUploadStatus] = useState(''); 
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null); // Stato per il tempo stimato
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -57,7 +58,6 @@ export default function Memories() {
       img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        // Ridotto a 600px e qualità 0.6: invisibile a occhio su cellulare, ma salva tantissima RAM e tempo
         const maxSize = 600; 
         let width = img.width, height = img.height;
         if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
@@ -69,7 +69,7 @@ export default function Memories() {
     });
   };
 
-  // ELABORAZIONE SEQUENZIALE PER NON BLOCCARE IL TELEFONO
+  // COMPRESSIONE IN CODA CON CALCOLO TEMPO STIMATO
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
@@ -77,8 +77,10 @@ export default function Memories() {
     const compressedImages: string[] = [];
 
     for (let i = 0; i < files.length; i++) {
-      setUploadStatus(`Preparazione foto ${i + 1} di ${files.length}...`);
-      await new Promise(r => setTimeout(r, 50)); // Respiro per sbloccare l'interfaccia
+      const remainingFiles = files.length - i;
+      setEstimatedTime(remainingFiles * 2); // Circa 2 secondi a foto per elaborarla
+      setUploadStatus(`Compressione foto ${i + 1} di ${files.length}...`);
+      await new Promise(r => setTimeout(r, 50)); 
 
       const compressed = await new Promise<string>((resolve) => {
         const reader = new FileReader();
@@ -90,9 +92,11 @@ export default function Memories() {
     
     setNewImages(prev => [...prev, ...compressedImages]);
     setUploadStatus('');
+    setEstimatedTime(null);
     setIsUploading(false);
   };
 
+  // SALVATAGGIO IN CODA CON CALCOLO TEMPO STIMATO CLOUD
   const handleAddMemory = async () => {
     if (!newTitle || !newDate || newImages.length === 0) return alert("Inserisci titolo, data e almeno una foto!");
     
@@ -101,10 +105,11 @@ export default function Memories() {
       const storage = getStorage(db.app);
       const uploadedUrls: string[] = [];
 
-      // Salvataggio su Firebase in sequenza controllata
       for (let i = 0; i < newImages.length; i++) {
-        setUploadStatus(`Salvataggio su Cloud ${i + 1} di ${newImages.length}...`);
-        await new Promise(r => setTimeout(r, 50)); // Respiro
+        const remainingUploads = newImages.length - i;
+        setEstimatedTime(remainingUploads * 3 + 1); // Circa 3 secondi ad upload + 1s finale
+        setUploadStatus(`Caricamento su Cloud ${i + 1} di ${newImages.length}...`);
+        await new Promise(r => setTimeout(r, 50)); 
 
         const imgName = `memories/${Date.now()}_${i}.jpg`;
         const storageRef = ref(storage, imgName);
@@ -113,7 +118,8 @@ export default function Memories() {
         uploadedUrls.push(url);
       }
 
-      setUploadStatus("Creazione ricordo in corso...");
+      setUploadStatus("Creazione del capitolo diario...");
+      setEstimatedTime(1);
       await addDoc(collection(db, "ricordi"), {
         title: newTitle,
         date: newDate,
@@ -130,10 +136,12 @@ export default function Memories() {
       console.error("Errore salvataggio ricordo:", e);
     } finally {
       setUploadStatus('');
+      setEstimatedTime(null);
       setIsUploading(false);
     }
   };
 
+  // MODIFICA FOTO CON TIMER DI PROCESSO COMPLETO
   const handleAddPhotoToEdit = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
@@ -143,8 +151,10 @@ export default function Memories() {
 
     try {
       for (let i = 0; i < files.length; i++) {
-        setUploadStatus(`Caricamento foto ${i + 1} di ${files.length}...`);
-        await new Promise(r => setTimeout(r, 50)); // Respiro
+        const remaining = files.length - i;
+        setEstimatedTime(remaining * 4); // Compressione + upload integrato ~4s a foto
+        setUploadStatus(`Ottimizzazione e invio foto ${i + 1} di ${files.length}...`);
+        await new Promise(r => setTimeout(r, 50)); 
         
         const dataUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
@@ -165,6 +175,7 @@ export default function Memories() {
       console.error("Errore aggiunta foto in modifica:", err);
     } finally {
       setUploadStatus('');
+      setEstimatedTime(null);
       setIsUploading(false);
     }
   };
@@ -199,7 +210,8 @@ export default function Memories() {
     if (!selectedMemory || editImgUrls.length === 0) return;
     try {
       setIsUploading(true);
-      setUploadStatus("Salvataggio modifiche...");
+      setUploadStatus("Aggiornamento dell'album...");
+      setEstimatedTime(2);
       const memRef = doc(db, "ricordi", selectedMemory.id);
       await updateDoc(memRef, { title: editTitle, date: editDate, imgUrls: editImgUrls });
       setSelectedMemory({ ...selectedMemory, title: editTitle, date: editDate, imgUrls: editImgUrls });
@@ -209,6 +221,7 @@ export default function Memories() {
       console.error("Errore salvataggio modifiche:", e);
     } finally {
       setUploadStatus('');
+      setEstimatedTime(null);
       setIsUploading(false);
     }
   };
@@ -341,11 +354,11 @@ export default function Memories() {
               <input type="text" placeholder="Titolo (es. Viaggio a Roma)" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
               <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-4 rounded-xl text-sm font-bold border border-white/10 flex items-center justify-center gap-2">
-                <ImageIcon size={18} /> {isUploading ? (uploadStatus || "Elaborazione in corso...") : `Seleziona Foto (${newImages.length} pronte)`}
+                <ImageIcon size={18} /> Seleziona Foto ({newImages.length} pronte)
               </button>
               <input type="file" ref={fileInputRef} hidden accept="image/*" multiple onChange={handleFileChange} />
               <button onClick={handleAddMemory} disabled={isUploading || newImages.length === 0} className="bg-red-600 py-4 rounded-xl font-bold mt-2 shadow-[0_0_15px_rgba(220,38,38,0.4)] disabled:opacity-50">
-                {isUploading ? (uploadStatus || "Salvataggio...") : "Salva Ricordo"}
+                Salva Ricordo
               </button>
             </div>
           </motion.div>
@@ -399,15 +412,15 @@ export default function Memories() {
                     </div>
                     
                     <button onClick={() => editFileInputRef.current?.click()} disabled={isUploading} className="w-full bg-white/10 hover:bg-white/20 py-2.5 rounded-xl text-xs font-bold border border-white/5 flex items-center justify-center gap-2 transition-colors">
-                      <Plus size={14} /> {isUploading ? (uploadStatus || "Elaborazione in corso...") : "Aggiungi Foto"}
+                      <Plus size={14} /> Aggiungi Foto
                     </button>
                     <input type="file" ref={editFileInputRef} hidden accept="image/*" multiple onChange={handleAddPhotoToEdit} />
                   </div>
 
                   <div className="flex gap-2 w-full mt-4">
-                    <button onClick={() => setIsEditingMeta(false)} disabled={isUploading} className="bg-white/10 flex-1 py-3 rounded-xl text-sm font-bold">Annulla</button>
-                    <button onClick={salvaModificheMeta} disabled={isUploading} className="bg-red-600 flex-1 py-3 rounded-xl text-sm font-bold shadow-lg">
-                      {isUploading ? (uploadStatus || "Salvataggio...") : "Salva Tutto"}
+                    <button onClick={() => setIsEditingMeta(false)} className="bg-white/10 flex-1 py-3 rounded-xl text-sm font-bold">Annulla</button>
+                    <button onClick={salvaModificheMeta} className="bg-red-600 flex-1 py-3 rounded-xl text-sm font-bold shadow-lg">
+                      Salva Tutto
                     </button>
                   </div>
                 </div>
@@ -465,6 +478,31 @@ export default function Memories() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ----------- INTERFACCIA DI CARICAMENTO AVANZATA (ROTELLINA + TIMER) ----------- */}
+      <AnimatePresence>
+        {isUploading && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[250] bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center"
+          >
+            <div className="bg-white/5 border border-white/10 p-6 rounded-3xl max-w-xs w-full flex flex-col items-center gap-4 shadow-2xl">
+              <Loader2 size={40} className="text-red-500 animate-spin" />
+              <div>
+                <p className="text-sm font-bold text-white">{uploadStatus || "Elaborazione in corso..."}</p>
+                {estimatedTime !== null && estimatedTime > 0 && (
+                  <p className="text-xs text-white/50 mt-1.5 font-mono bg-white/5 py-0.5 px-2 rounded-full inline-block">
+                    Tempo stimato rimanente: ~{estimatedTime}s
+                  </p>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
