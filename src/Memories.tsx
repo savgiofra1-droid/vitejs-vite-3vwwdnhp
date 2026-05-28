@@ -1,23 +1,64 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Camera, Trash2, Edit2 } from 'lucide-react';
-import { collection, onSnapshot, query, deleteDoc, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, X, ChevronLeft, ChevronRight, Image as ImageIcon, MessageCircle, Edit2, Trash2 } from 'lucide-react';
+import { collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db } from './firebase';
 
 export default function Memories() {
-  const [ricordi, setRicordi] = useState<any[]>([]);
+  const userName = localStorage.getItem('userName') || 'Tizzi';
+  const otherUser = userName === 'Tizzi' ? 'Sofia' : 'Tizzi';
+  
+  const [memories, setMemories] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [tempImage, setTempImage] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ titolo: '', data: '' });
+  const [selectedMemory, setSelectedMemory] = useState<any | null>(null);
+
+  const [newTitle, setNewTitle] = useState('');
+  const [newDate, setNewDate] = useState('');
+  const [newImages, setNewImages] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [currentImgIndex, setCurrentImgIndex] = useState(0);
+  const [myComment, setMyComment] = useState('');
+  const [isSavingComment, setIsSavingComment] = useState(false);
+
+  // Stati per la modifica di Titolo e Data
+  const [isEditingMeta, setIsEditingMeta] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDate, setEditDate] = useState('');
+
   useEffect(() => {
-    const q = query(collection(db, "ricordi"));
-    return onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      docs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-      setRicordi(docs);
+    const unsubscribe = onSnapshot(collection(db, "ricordi"), (snapshot) => {
+      let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      try {
+        docs.sort((a: any, b: any) => {
+          const estraiTempo = (item: any) => {
+            if (!item) return 0;
+            if (item.date) {
+              const ms = new Date(item.date).getTime();
+              if (!isNaN(ms)) return ms;
+            }
+            if (item.timestamp && typeof item.timestamp.toDate === 'function') {
+              return item.timestamp.toDate().getTime();
+            }
+            if (item.createdAt) {
+              const ms = new Date(item.createdAt).getTime();
+              if (!isNaN(ms)) return ms;
+            }
+            return 0;
+          };
+          return estraiTempo(b) - estraiTempo(a);
+        });
+      } catch (err) {
+        console.error("Errore nell'ordinamento", err);
+      }
+      
+      setMemories(docs);
     });
+    
+    return () => unsubscribe();
   }, []);
 
   const compressImage = (dataUrl: string) => {
@@ -26,117 +67,295 @@ export default function Memories() {
       img.src = dataUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxSize = 600;
+        const maxSize = 1000; 
         let width = img.width, height = img.height;
         if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
         else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
         canvas.width = width; canvas.height = height;
         canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
     });
   };
 
-  const handleSave = async () => {
-    if (!formData.titolo || !tempImage) return;
-    try {
-      if (editingId) {
-        await updateDoc(doc(db, "ricordi", editingId), { ...formData, img: tempImage });
-      } else {
-        await addDoc(collection(db, "ricordi"), { ...formData, img: tempImage, timestamp: serverTimestamp() });
-      }
-      setIsAdding(false); setEditingId(null); setTempImage(null); setFormData({ titolo: '', data: '' });
-    } catch (e) { alert("Errore nel salvataggio"); }
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    const files = Array.from(e.target.files);
+    setIsUploading(true);
+    
+    const compressedImages: string[] = [];
+    for (const file of files) {
+      const reader = new FileReader();
+      const promise = new Promise<string>((resolve) => {
+        reader.onload = async (ev) => {
+          const compressed = await compressImage(ev.target?.result as string);
+          resolve(compressed);
+        };
+      });
+      reader.readAsDataURL(file);
+      compressedImages.push(await promise);
+    }
+    
+    setNewImages(prev => [...prev, ...compressedImages]);
+    setIsUploading(false);
   };
 
-  const getMonthYear = (dataStr: string) => {
-    if (!dataStr) return { sortKey: "0000-00", displayKey: "ALTRI RICORDI" };
-    const s = dataStr.trim().toUpperCase();
-    const months = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"];
+  const handleAddMemory = async () => {
+    if (!newTitle || !newDate || newImages.length === 0) return alert("Inserisci titolo, data e almeno una foto!");
+    
+    try {
+      setIsUploading(true);
+      const storage = getStorage(db.app);
+      const uploadedUrls: string[] = [];
 
-    if (s.includes('/')) {
-      const parts = s.split('/');
-      if (parts.length >= 2) {
-        const mStr = parts.length === 3 ? parts[1] : parts[0];
-        const yStr = parts.length === 3 ? parts[2] : parts[1];
-        const m = parseInt(mStr, 10);
-        if (!isNaN(m) && m >= 1 && m <= 12) {
-          return { sortKey: `${yStr}-${m.toString().padStart(2, '0')}`, displayKey: `${months[m - 1]} ${yStr}` };
-        }
+      for (let i = 0; i < newImages.length; i++) {
+        const imgName = `memories/${Date.now()}_${i}.jpg`;
+        const storageRef = ref(storage, imgName);
+        await uploadString(storageRef, newImages[i], 'data_url');
+        const url = await getDownloadURL(storageRef);
+        uploadedUrls.push(url);
       }
-    } else {
-      const parts = s.split(' ');
-      if (parts.length >= 2) {
-        const mName = parts[parts.length - 2];
-        const yStr = parts[parts.length - 1];
-        const mIndex = months.indexOf(mName);
-        if (mIndex !== -1) {
-          return { sortKey: `${yStr}-${(mIndex + 1).toString().padStart(2, '0')}`, displayKey: `${mName} ${yStr}` };
-        }
+
+      await addDoc(collection(db, "ricordi"), {
+        title: newTitle,
+        date: newDate,
+        imgUrls: uploadedUrls, 
+        comments: { Tizzi: "", Sofia: "" },
+        createdAt: new Date().toISOString()
+      });
+
+      setIsAdding(false);
+      setNewTitle('');
+      setNewDate('');
+      setNewImages([]);
+    } catch (e) {
+      console.error("Errore salvataggio ricordo:", e);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const apriRicordo = (mem: any) => {
+    setSelectedMemory(mem);
+    setCurrentImgIndex(0);
+    setMyComment(mem.comments ? (mem.comments[userName] || '') : '');
+    
+    // Prepara i campi per l'eventuale modifica
+    setEditTitle(mem.title || mem.text || 'Ricordo');
+    let dStr = '';
+    if (mem.date) dStr = mem.date;
+    else if (mem.timestamp?.toDate) dStr = mem.timestamp.toDate().toISOString().split('T')[0];
+    setEditDate(dStr);
+    setIsEditingMeta(false);
+  };
+
+  const salvaModificheMeta = async () => {
+    if (!selectedMemory) return;
+    try {
+      const memRef = doc(db, "ricordi", selectedMemory.id);
+      await updateDoc(memRef, { title: editTitle, date: editDate });
+      setSelectedMemory({ ...selectedMemory, title: editTitle, date: editDate });
+      setIsEditingMeta(false);
+    } catch (e) {
+      console.error("Errore modifica:", e);
+    }
+  };
+
+  const eliminaRicordo = async () => {
+    if (window.confirm("Sei sicuro di voler eliminare per sempre questo ricordo?")) {
+      try {
+        await deleteDoc(doc(db, "ricordi", selectedMemory.id));
+        setSelectedMemory(null);
+      } catch (e) {
+        console.error("Errore eliminazione:", e);
       }
     }
-    return { sortKey: "0000-00", displayKey: "ALTRI RICORDI" };
   };
 
-  const grouped = ricordi.reduce((acc: any, r: any) => {
-    const { sortKey, displayKey } = getMonthYear(r.data);
-    if (!acc[sortKey]) acc[sortKey] = { displayKey, items: [] };
-    acc[sortKey].items.push(r);
-    return acc;
-  }, {});
+  const salvaCommento = async () => {
+    if (!selectedMemory) return;
+    try {
+      setIsSavingComment(true);
+      const memRef = doc(db, "ricordi", selectedMemory.id);
+      const updatedComments = { ...(selectedMemory.comments || {}), [userName]: myComment.trim() };
+      await updateDoc(memRef, { comments: updatedComments });
+      setSelectedMemory({ ...selectedMemory, comments: updatedComments });
+    } catch (e) {
+      console.error("Errore salvataggio commento:", e);
+    } finally {
+      setIsSavingComment(false);
+    }
+  };
 
-  // Ordina in modo decrescente in base alla sortKey (es. 2026-05 prima di 2026-04)
-  const sortedKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+  const formattaData = (mem: any) => {
+    try {
+      if (mem.date) return new Date(mem.date).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+      if (mem.timestamp?.toDate) return mem.timestamp.toDate().toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+      return 'Data speciale';
+    } catch (e) { return 'Data speciale'; }
+  };
+
+  const getCoverImg = (mem: any) => {
+    if (mem.imgUrls && Array.isArray(mem.imgUrls) && mem.imgUrls.length > 0) return mem.imgUrls[0];
+    return mem.img || mem.image || mem.imageUrl || mem.url || "";
+  };
 
   return (
-    <div className="h-full p-4 pb-24 overflow-y-auto text-white">
-      <div className="flex justify-between items-center mb-6 pt-4">
-        <h2 className="text-2xl font-bold uppercase italic shadow-black drop-shadow-md">I Nostri Ricordi</h2>
-        <button onClick={() => setIsAdding(true)} className="bg-red-500 p-3 rounded-full"><Plus /></button>
+    <div className="flex flex-col h-full p-4 pt-16 overflow-y-auto pb-28 text-white relative">
+      
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold uppercase tracking-widest italic text-red-400 drop-shadow-md">I Nostri Ricordi</h2>
+        <p className="text-xs text-white/60 mt-1">Scegli un momento per riviverlo</p>
       </div>
 
-      <div className="space-y-8">
-        {sortedKeys.map(key => (
-          <div key={key}>
-            <h3 className="text-red-500 font-bold mb-4 border-b border-white/10 uppercase tracking-widest shadow-black drop-shadow-md">{grouped[key].displayKey}</h3>
-            <div className="grid grid-cols-2 gap-4">
-              {grouped[key].items.map((r: any) => (
-                <div key={r.id} className="relative flex flex-col gap-2 bg-black/40 backdrop-blur-sm p-2 rounded-2xl">
-                  <div className="relative aspect-[3/4] rounded-xl overflow-hidden">
-                    <img src={r.img} alt="ricordo" className="w-full h-full object-cover" />
-                    <button onClick={() => deleteDoc(doc(db, "ricordi", r.id))} className="absolute top-2 right-2 bg-black/50 p-1 rounded-full"><Trash2 size={14} color="red" /></button>
-                    <button onClick={() => { setEditingId(r.id); setFormData({titolo: r.titolo, data: r.data}); setTempImage(r.img); setIsAdding(true); }} className="absolute top-2 left-2 bg-black/50 p-1 rounded-full"><Edit2 size={14} color="white" /></button>
-                  </div>
-                  <div className="px-1">
-                    <p className="font-bold text-sm truncate">{r.titolo}</p>
-                    <p className="text-[10px] opacity-80">{r.data}</p>
-                  </div>
+      {memories.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 mt-10">
+          <ImageIcon size={48} className="mb-4" />
+          <p>Nessun ricordo trovato.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          {memories.map((mem) => {
+            const coverImg = getCoverImg(mem);
+            const fotoCount = (mem.imgUrls && Array.isArray(mem.imgUrls)) ? mem.imgUrls.length : 1;
+            const titolo = mem.title || mem.text || "Ricordo";
+            if (!coverImg) return null;
+
+            return (
+              <motion.div 
+                key={mem.id}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => apriRicordo(mem)}
+                className="relative aspect-square rounded-2xl overflow-hidden cursor-pointer shadow-lg group border border-white/10 bg-black/40"
+              >
+                <img src={coverImg} alt={titolo} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3">
+                  <h3 className="font-bold text-sm leading-tight drop-shadow-md">{titolo}</h3>
+                  <p className="text-[10px] text-red-300 font-mono mt-0.5 drop-shadow-md">{formattaData(mem)}</p>
+                  {fotoCount > 1 && (
+                    <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md text-[9px] font-bold border border-white/20 flex items-center gap-1">
+                      <ImageIcon size={10} /> {fotoCount}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {isAdding && (
-        <div className="fixed inset-0 z-50 bg-black p-6 flex flex-col gap-4">
-          <h3 className="font-bold">{editingId ? 'Modifica' : 'Nuovo Ricordo'}</h3>
-          <div onClick={() => fileInputRef.current?.click()} className="w-full aspect-video bg-white/10 rounded-2xl flex items-center justify-center border border-dashed">
-            {tempImage ? <img src={tempImage} className="w-full h-full object-cover rounded-2xl" /> : <Camera />}
-          </div>
-          <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={(e) => {
-            if (e.target.files?.[0]) {
-              const reader = new FileReader();
-              reader.onload = async (ev) => setTempImage(await compressImage(ev.target?.result as string));
-              reader.readAsDataURL(e.target.files[0]);
-            }
-          }} />
-          <input value={formData.titolo} placeholder="Titolo" className="w-full bg-white/10 p-4 rounded-xl" onChange={e => setFormData({...formData, titolo: e.target.value})} />
-          <input value={formData.data} placeholder="Data (es. 28 Maggio 2026 oppure 28/05/2026)" className="w-full bg-white/10 p-4 rounded-xl" onChange={e => setFormData({...formData, data: e.target.value})} />
-          <button onClick={handleSave} className="w-full py-4 bg-red-500 rounded-xl font-bold">Salva</button>
-          <button onClick={() => setIsAdding(false)} className="w-full py-2 opacity-50">Annulla</button>
+              </motion.div>
+            );
+          })}
         </div>
       )}
+
+      <motion.button 
+        whileTap={{ scale: 0.9 }}
+        onClick={() => setIsAdding(true)}
+        className="fixed bottom-28 right-6 bg-red-600 p-4 rounded-full shadow-[0_4px_20px_rgba(220,38,38,0.5)] z-40 border border-red-400/30"
+      >
+        <Plus size={24} />
+      </motion.button>
+
+      {/* MODALE AGGIUNTA RICORDO */}
+      <AnimatePresence>
+        {isAdding && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-md p-6 flex flex-col justify-center items-center">
+            <button onClick={() => { setIsAdding(false); setNewImages([]); }} className="absolute top-6 right-6 bg-white/10 p-3 rounded-full"><X size={20} /></button>
+            <div className="w-full max-w-sm bg-white/5 border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl">
+              <h3 className="text-xl font-bold text-red-400 text-center mb-2">Nuovo Ricordo</h3>
+              <input type="text" placeholder="Titolo (es. Viaggio a Roma)" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
+              <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-4 rounded-xl text-sm font-bold border border-white/10 flex items-center justify-center gap-2">
+                <ImageIcon size={18} /> Seleziona Foto ({newImages.length} caricate)
+              </button>
+              <input type="file" ref={fileInputRef} hidden accept="image/*" multiple onChange={handleFileChange} />
+              <button onClick={handleAddMemory} disabled={isUploading} className="bg-red-600 py-4 rounded-xl font-bold mt-2 shadow-[0_0_15px_rgba(220,38,38,0.4)]">
+                {isUploading ? "Elaborazione..." : "Salva Ricordo"}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODALE RICORDO ESPANSO */}
+      <AnimatePresence>
+        {selectedMemory && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex flex-col pt-12">
+            
+            {/* Tasti in alto */}
+            <div className="absolute top-6 right-6 flex gap-3 z-50">
+              <button onClick={eliminaRicordo} className="bg-red-500/20 text-red-400 p-2 rounded-full border border-red-500/30 backdrop-blur-md hover:bg-red-500/40 transition-colors">
+                <Trash2 size={20} />
+              </button>
+              <button onClick={() => setSelectedMemory(null)} className="bg-white/10 p-2 rounded-full border border-white/10 backdrop-blur-md">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pb-8 mt-4">
+              
+              {/* Intestazione o Form di Modifica */}
+              {isEditingMeta ? (
+                <div className="px-6 mb-6 flex flex-col items-center gap-3">
+                  <h3 className="text-sm font-bold text-red-400">Modifica Dettagli</h3>
+                  <input type="text" value={editTitle} onChange={e=>setEditTitle(e.target.value)} placeholder="Titolo" className="bg-black/50 border border-white/20 p-3 rounded-xl text-center w-full max-w-[250px] focus:outline-none" />
+                  <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} className="bg-black/50 border border-white/20 p-3 rounded-xl text-center w-full max-w-[250px] focus:outline-none" />
+                  <div className="flex gap-2 w-full max-w-[250px]">
+                    <button onClick={() => setIsEditingMeta(false)} className="bg-white/10 flex-1 py-2 rounded-xl text-sm font-bold">Annulla</button>
+                    <button onClick={salvaModificheMeta} className="bg-red-600 flex-1 py-2 rounded-xl text-sm font-bold">Salva</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-6 text-center mb-6 relative group inline-block w-full flex justify-center items-center flex-col">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-3xl font-bold text-white drop-shadow-lg">{selectedMemory.title || selectedMemory.text || 'Ricordo'}</h2>
+                    <button onClick={() => setIsEditingMeta(true)} className="text-white/40 hover:text-white/100 transition-colors"><Edit2 size={18}/></button>
+                  </div>
+                  <p className="text-red-400 font-mono text-sm mt-1">{formattaData(selectedMemory)}</p>
+                </div>
+              )}
+
+              {/* Area Carosello Foto */}
+              <div className="relative w-full h-[50vh] bg-black flex items-center justify-center border-y border-white/10">
+                {selectedMemory.imgUrls && Array.isArray(selectedMemory.imgUrls) && selectedMemory.imgUrls.length > 1 && (
+                  <>
+                    <button onClick={() => setCurrentImgIndex(prev => (prev - 1 + selectedMemory.imgUrls.length) % selectedMemory.imgUrls.length)} className="absolute left-2 z-10 bg-black/50 p-2 rounded-full border border-white/10 backdrop-blur-md"><ChevronLeft size={24} /></button>
+                    <button onClick={() => setCurrentImgIndex(prev => (prev + 1) % selectedMemory.imgUrls.length)} className="absolute right-2 z-10 bg-black/50 p-2 rounded-full border border-white/10 backdrop-blur-md"><ChevronRight size={24} /></button>
+                    <div className="absolute bottom-4 flex gap-1.5 z-10 bg-black/40 px-2 py-1 rounded-full backdrop-blur-md">
+                      {selectedMemory.imgUrls.map((_: any, idx: number) => (
+                        <div key={idx} className={`w-1.5 h-1.5 rounded-full transition-all ${idx === currentImgIndex ? 'bg-white w-3' : 'bg-white/40'}`} />
+                      ))}
+                    </div>
+                  </>
+                )}
+                <img src={(selectedMemory.imgUrls && Array.isArray(selectedMemory.imgUrls) && selectedMemory.imgUrls.length > 0) ? selectedMemory.imgUrls[currentImgIndex] : getCoverImg(selectedMemory)} alt="Ricordo" className="w-full h-full object-contain" />
+              </div>
+
+              {/* Sezione Commenti */}
+              <div className="px-6 mt-8 space-y-6 max-w-lg mx-auto">
+                <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-2">
+                  <MessageCircle size={18} className="text-red-400" />
+                  <h3 className="font-bold uppercase tracking-wider text-sm">I Vostri Pensieri</h3>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="bg-white/5 border border-white/10 p-4 rounded-2xl relative">
+                    <span className="absolute -top-3 left-4 bg-black px-2 text-[10px] font-bold text-white/50 tracking-widest">{otherUser}</span>
+                    <p className="text-sm italic text-white/80 whitespace-pre-wrap">{selectedMemory.comments?.[otherUser] || `Nessun pensiero aggiunto da ${otherUser}.`}</p>
+                  </div>
+                  <div className="bg-red-900/10 border border-red-500/20 p-4 rounded-2xl relative">
+                    <span className="absolute -top-3 left-4 bg-black px-2 text-[10px] font-bold text-red-400 tracking-widest">{userName} (Tu)</span>
+                    <textarea value={myComment} onChange={(e) => setMyComment(e.target.value)} placeholder="Scrivi qui il tuo pensiero legato a questo ricordo..." className="w-full bg-transparent text-sm text-white focus:outline-none resize-none min-h-[80px]" />
+                    <div className="flex justify-end mt-2">
+                      <button onClick={salvaCommento} disabled={isSavingComment || myComment.trim() === selectedMemory.comments?.[userName]} className="bg-red-600/80 hover:bg-red-500 disabled:opacity-50 disabled:bg-white/10 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                        {isSavingComment ? "Salvataggio..." : "Salva Pensiero"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
