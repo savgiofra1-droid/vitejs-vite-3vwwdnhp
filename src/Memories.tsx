@@ -3,8 +3,88 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, ChevronLeft, ChevronRight, Image as ImageIcon, MessageCircle, Edit2, Trash2, Star, Loader2 } from 'lucide-react';
 import { collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { db } from './firebase';
+import { db } from './firebase'; // <--- CORRETTO con la 'f' minuscola './firebase'
 
+// --- FUNZIONI UTILITY GLOBALI ---
+const formattaData = (mem: any) => {
+  try {
+    if (mem.date) return new Date(mem.date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (mem.timestamp?.toDate) return mem.timestamp.toDate().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return 'Data speciale';
+  } catch (e) { return 'Data speciale'; }
+};
+
+const getCoverImg = (mem: any) => {
+  if (mem.imgUrls && Array.isArray(mem.imgUrls) && mem.imgUrls.length > 0) return mem.imgUrls[0];
+  return mem.img || mem.image || mem.imageUrl || mem.url || "";
+};
+
+const getMeseAnno = (mem: any) => {
+  try {
+    let d = new Date();
+    if (mem.date) d = new Date(mem.date);
+    else if (mem.timestamp?.toDate) d = mem.timestamp.toDate();
+    else if (mem.createdAt) d = new Date(mem.createdAt);
+    return new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(d).toUpperCase();
+  } catch (e) { return ''; }
+};
+
+
+// --- SOTTO-COMPONENTE MEMORY CARD (ANTEPRIMA IN GRIGLIA CON AUTOPLAY 2s) ---
+interface MemoryCardProps {
+  mem: any;
+  onOpen: (mem: any) => void;
+}
+
+const MemoryCard: React.FC<MemoryCardProps> = ({ mem, onOpen }) => {
+  const [currentGridImgIndex, setCurrentGridImgIndex] = useState(0);
+  
+  const urls = (mem.imgUrls && Array.isArray(mem.imgUrls) && mem.imgUrls.length > 0) 
+    ? mem.imgUrls 
+    : [getCoverImg(mem)];
+  
+  const fotoCount = urls.length;
+  const titolo = mem.title || mem.text || "Ricordo";
+
+  useEffect(() => {
+    if (fotoCount <= 1) return;
+
+    const interval = setInterval(() => {
+      setCurrentGridImgIndex((prevIndex) => (prevIndex + 1) % fotoCount);
+    }, 2000); 
+
+    return () => clearInterval(interval);
+  }, [fotoCount]);
+
+  return (
+    <motion.div 
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => onOpen(mem)}
+      className="relative aspect-[4/5] rounded-2xl overflow-hidden cursor-pointer shadow-lg group border border-white/10 bg-black/40"
+    >
+      <img 
+        src={urls[currentGridImgIndex]} 
+        alt={titolo} 
+        className="w-full h-full object-cover transition-all duration-700" 
+      />
+      
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3">
+        <h3 className="font-bold text-sm leading-tight drop-shadow-md text-ellipsis overflow-hidden whitespace-nowrap">{titolo}</h3>
+        <p className="text-[10px] text-white/70 font-mono mt-0.5 drop-shadow-md">{formattaData(mem)}</p>
+        
+        {fotoCount > 1 && (
+          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md text-[9px] font-bold border border-white/20 flex items-center gap-1">
+            <ImageIcon size={10} /> {fotoCount}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+
+// --- COMPONENTE PRINCIPALE MEMORIES ---
 export default function Memories() {
   const userName = localStorage.getItem('userName') || 'Tizzi';
   const otherUser = userName === 'Tizzi' ? 'Sofia' : 'Tizzi';
@@ -23,7 +103,7 @@ export default function Memories() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
-  const [currentImgIndex, setCurrentImgIndex] = useState(0);
+  const [currentPopupImgIndex, setCurrentPopupImgIndex] = useState(0);
   const [myComment, setMyComment] = useState('');
   const [isSavingComment, setIsSavingComment] = useState(false);
 
@@ -52,7 +132,6 @@ export default function Memories() {
     return () => unsubscribe();
   }, []);
 
-  // SISTEMA DI COMPRESSIONE ANTI-CRASH COMPATIBILE CON IPHONE
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -120,7 +199,7 @@ export default function Memories() {
         const compressed = await compressImage(files[i]);
         compressedImages.push(compressed);
       } catch (err) {
-        console.error("Salto una foto corrotta o pesante: ", err);
+        console.error("Salto foto pesante: ", err);
       }
     }
     
@@ -212,7 +291,7 @@ export default function Memories() {
 
   const apriRicordo = (mem: any) => {
     setSelectedMemory(mem);
-    setCurrentImgIndex(0);
+    setCurrentPopupImgIndex(0); 
     setMyComment(mem.comments ? (mem.comments[userName] || '') : '');
     
     setEditTitle(mem.title || mem.text || 'Ricordo');
@@ -244,7 +323,7 @@ export default function Memories() {
       const memRef = doc(db, "ricordi", selectedMemory.id);
       await updateDoc(memRef, { title: editTitle, date: editDate, imgUrls: editImgUrls });
       setSelectedMemory({ ...selectedMemory, title: editTitle, date: editDate, imgUrls: editImgUrls });
-      setCurrentImgIndex(0);
+      setCurrentPopupImgIndex(0);
       setIsEditingMeta(false);
     } catch (e) {
       console.error(e);
@@ -275,28 +354,6 @@ export default function Memories() {
     finally { setIsSavingComment(false); }
   };
 
-  const formattaData = (mem: any) => {
-    try {
-      if (mem.date) return new Date(mem.date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      if (mem.timestamp?.toDate) return mem.timestamp.toDate().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      return 'Data speciale';
-    } catch (e) { return 'Data speciale'; }
-  };
-
-  const getCoverImg = (mem: any) => {
-    if (mem.imgUrls && Array.isArray(mem.imgUrls) && mem.imgUrls.length > 0) return mem.imgUrls[0];
-    return mem.img || mem.image || mem.imageUrl || mem.url || "";
-  };
-
-  const getMeseAnno = (mem: any) => {
-    try {
-      let d = new Date();
-      if (mem.date) d = new Date(mem.date);
-      else if (mem.timestamp?.toDate) d = mem.timestamp.toDate();
-      else if (mem.createdAt) d = new Date(mem.createdAt);
-      return new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(d).toUpperCase();
-    } catch (e) { return ''; }
-  };
 
   return (
     <div className="flex flex-col h-full p-4 pt-16 overflow-y-auto pb-28 text-white relative">
@@ -317,8 +374,6 @@ export default function Memories() {
             let lastMeseAnno = "";
             return memories.map((mem) => {
               const coverImg = getCoverImg(mem);
-              const fotoCount = (mem.imgUrls && Array.isArray(mem.imgUrls)) ? mem.imgUrls.length : 1;
-              const titolo = mem.title || mem.text || "Ricordo";
               if (!coverImg) return null;
 
               const meseAnnoCorrente = getMeseAnno(mem);
@@ -335,23 +390,7 @@ export default function Memories() {
                     </div>
                   )}
                   
-                  <motion.div 
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => apriRicordo(mem)}
-                    className="relative aspect-[4/5] rounded-2xl overflow-hidden cursor-pointer shadow-lg group border border-white/10 bg-black/40"
-                  >
-                    <img src={coverImg} alt={titolo} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3">
-                      <h3 className="font-bold text-sm leading-tight drop-shadow-md text-ellipsis overflow-hidden whitespace-nowrap">{titolo}</h3>
-                      <p className="text-[10px] text-white/70 font-mono mt-0.5 drop-shadow-md">{formattaData(mem)}</p>
-                      {fotoCount > 1 && (
-                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-md text-[9px] font-bold border border-white/20 flex items-center gap-1">
-                          <ImageIcon size={10} /> {fotoCount}
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
+                  <MemoryCard mem={mem} onOpen={apriRicordo} />
                 </React.Fragment>
               );
             });
@@ -374,7 +413,7 @@ export default function Memories() {
             <button onClick={() => { setIsAdding(false); setNewImages([]); }} className="absolute top-6 right-6 bg-white/10 p-3 rounded-full"><X size={20} /></button>
             <div className="w-full max-w-sm bg-white/5 border border-white/10 p-6 rounded-3xl flex flex-col gap-4 shadow-2xl">
               <h3 className="text-xl font-bold text-red-400 text-center mb-2">Nuovo Ricordo</h3>
-              <input type="text" placeholder="Titolo (es. Viaggio a Roma)" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
+              <input type="text" placeholder="Titolo" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="bg-black/50 p-4 rounded-xl text-sm text-white focus:outline-none border border-white/10" />
               <button onClick={() => fileInputRef.current?.click()} className="bg-white/10 p-4 rounded-xl text-sm font-bold border border-white/10 flex items-center justify-center gap-2">
                 <ImageIcon size={18} /> Seleziona Foto ({newImages.length} pronte)
@@ -460,16 +499,16 @@ export default function Memories() {
                   <div className="relative w-full h-[50vh] bg-black flex items-center justify-center border-y border-white/10">
                     {selectedMemory.imgUrls && Array.isArray(selectedMemory.imgUrls) && selectedMemory.imgUrls.length > 1 && (
                       <>
-                        <button onClick={() => setCurrentImgIndex(prev => (prev - 1 + selectedMemory.imgUrls.length) % selectedMemory.imgUrls.length)} className="absolute left-2 z-10 bg-black/50 p-2 rounded-full border border-white/10 backdrop-blur-md"><ChevronLeft size={24} /></button>
-                        <button onClick={() => setCurrentImgIndex(prev => (prev + 1) % selectedMemory.imgUrls.length)} className="absolute right-2 z-10 bg-black/50 p-2 rounded-full border border-white/10 backdrop-blur-md"><ChevronRight size={24} /></button>
+                        <button onClick={() => setCurrentPopupImgIndex(prev => (prev - 1 + selectedMemory.imgUrls.length) % selectedMemory.imgUrls.length)} className="absolute left-2 z-10 bg-black/50 p-2 rounded-full border border-white/10 backdrop-blur-md"><ChevronLeft size={24} /></button>
+                        <button onClick={() => setCurrentPopupImgIndex(prev => (prev + 1) % selectedMemory.imgUrls.length)} className="absolute right-2 z-10 bg-black/50 p-2 rounded-full border border-white/10 backdrop-blur-md"><ChevronRight size={24} /></button>
                         <div className="absolute bottom-4 flex gap-1.5 z-10 bg-black/40 px-2 py-1 rounded-full backdrop-blur-md">
                           {selectedMemory.imgUrls.map((_: any, idx: number) => (
-                            <div key={idx} className={`w-1.5 h-1.5 rounded-full transition-all ${idx === currentImgIndex ? 'bg-white w-3' : 'bg-white/40'}`} />
+                            <div key={idx} className={`w-1.5 h-1.5 rounded-full transition-all ${idx === currentPopupImgIndex ? 'bg-white w-3' : 'bg-white/40'}`} />
                           ))}
                         </div>
                       </>
                     )}
-                    <img src={(selectedMemory.imgUrls && Array.isArray(selectedMemory.imgUrls) && selectedMemory.imgUrls.length > 0) ? selectedMemory.imgUrls[currentImgIndex] : getCoverImg(selectedMemory)} alt="Ricordo" className="w-full h-full object-contain" />
+                    <img src={(selectedMemory.imgUrls && Array.isArray(selectedMemory.imgUrls) && selectedMemory.imgUrls.length > 0) ? selectedMemory.imgUrls[currentPopupImgIndex] : getCoverImg(selectedMemory)} alt="Ricordo" className="w-full h-full object-contain" />
                   </div>
                 </>
               )}
